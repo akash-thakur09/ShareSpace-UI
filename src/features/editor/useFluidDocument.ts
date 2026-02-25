@@ -1,7 +1,10 @@
-// src/features/editor/useFluidDocument.ts
 import { useEffect, useState } from "react";
 import { SharedString } from "fluid-framework/legacy";
 import { getFluidContainer } from "../../fluid/container";
+import {
+  createDocument,
+  resolveDocument
+} from "../document/document.service";
 
 export function useFluidDocument() {
   const [doc, setDoc] = useState<SharedString | null>(null);
@@ -9,15 +12,17 @@ export function useFluidDocument() {
   useEffect(() => {
     async function init() {
       const params = new URLSearchParams(window.location.search);
-      let containerId = params.get("doc");
+      const docId = params.get("doc");
 
-      if (!containerId) {
-        // CREATE container
+      if (!docId) {
+        // CREATE Fluid container
         const result = await getFluidContainer();
-        containerId = result.containerId!;
 
-        // PUT containerId in URL
-        params.set("doc", containerId);
+        // CREATE short public docId
+        const shortDocId = createDocument(result.containerId);
+
+        // PUT short docId in URL
+        params.set("doc", shortDocId);
         window.history.replaceState(
           {},
           "",
@@ -26,7 +31,13 @@ export function useFluidDocument() {
 
         setDoc(result.container.initialObjects.document as SharedString);
       } else {
-        // LOAD existing container
+        // RESOLVE short docId → containerId
+        const containerId = resolveDocument(docId);
+        if (!containerId) {
+          console.error("Invalid document ID");
+          return;
+        }
+
         const { container } = await getFluidContainer(containerId);
         setDoc(container.initialObjects.document as SharedString);
       }
