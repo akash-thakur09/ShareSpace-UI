@@ -28,10 +28,10 @@ function Home() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-950">
+      <div className="flex h-screen items-center justify-center" style={{ background: "rgb(249 250 251)" }}>
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-500" />
-          <p className="text-sm text-slate-400">Creating document...</p>
+          <div className="h-7 w-7 animate-spin rounded-full border-2" style={{ borderColor: "rgb(226 228 233)", borderTopColor: "rgb(99 102 241)" }} />
+          <p className="text-sm" style={{ color: "rgb(107 114 128)" }}>Creating document...</p>
         </div>
       </div>
     );
@@ -39,15 +39,15 @@ function Home() {
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-950">
-        <div className="flex flex-col items-center gap-3 text-center max-w-md">
-          <p className="text-red-400">{error}</p>
-          <p className="text-sm text-slate-400">
+      <div className="flex h-screen items-center justify-center" style={{ background: "rgb(249 250 251)" }}>
+        <div className="flex flex-col items-center gap-3 text-center max-w-md px-6">
+          <p style={{ color: "rgb(239 68 68)" }}>{error}</p>
+          <p className="text-sm" style={{ color: "rgb(107 114 128)" }}>
             Make sure the backend is running on http://localhost:4000
           </p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
           >
             Try Again
           </button>

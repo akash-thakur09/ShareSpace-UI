@@ -3,14 +3,20 @@ import { AiAssistantPanel } from "../panels/AiAssistantPanel";
 
 export function WorkspaceLayout() {
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-slate-950">
-      {/* Main Editor Area */}
+    <div
+      className="flex h-screen w-full overflow-hidden"
+      style={{ background: "rgb(var(--color-bg-base))" }}
+    >
+      {/* Main editor */}
       <div className="flex-1 flex flex-col min-w-0">
         <EditorCanvas />
       </div>
 
-      {/* AI Assistant Sidebar */}
-      <aside className="w-80 border-l border-slate-800 bg-slate-900/50 backdrop-blur-sm hidden lg:block">
+      {/* AI panel */}
+      <aside
+        className="w-72 hidden lg:flex flex-col shrink-0"
+        style={{ borderLeft: "1px solid rgb(var(--color-border-subtle))" }}
+      >
         <AiAssistantPanel />
       </aside>
     </div>
