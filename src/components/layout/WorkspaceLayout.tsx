@@ -1,14 +1,18 @@
 import { EditorCanvas } from "../../features/editor/EditorCanvas";
+import { AiAssistantPanel } from "../panels/AiAssistantPanel";
 
 export function WorkspaceLayout() {
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
-      <div style={{ flex: 1 }}>
+    <div className="flex h-screen w-full overflow-hidden bg-slate-950">
+      {/* Main Editor Area */}
+      <div className="flex-1 flex flex-col min-w-0">
         <EditorCanvas />
       </div>
-      <div style={{ width: 320, borderLeft: "1px solid #ddd" }}>
-        AI Assistant
-      </div>
+
+      {/* AI Assistant Sidebar */}
+      <aside className="w-80 border-l border-slate-800 bg-slate-900/50 backdrop-blur-sm hidden lg:block">
+        <AiAssistantPanel />
+      </aside>
     </div>
   );
 }
