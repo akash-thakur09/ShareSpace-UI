@@ -1,68 +1,364 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
+@layer base {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    /* Brand */
+    --color-primary: 99 102 241;
+    --color-primary-hover: 79 70 229;
+
+    /* Light backgrounds */
+    --color-bg-base: 249 250 251;
+    --color-bg-surface: 255 255 255;
+    --color-bg-elevated: 245 246 248;
+    --color-bg-overlay: 238 240 244;
+    --color-bg-hover: 234 236 242;
+
+    /* Text */
+    --color-text-primary: 17 24 39;
+    --color-text-secondary: 55 65 81;
+    --color-text-muted: 107 114 128;
+    --color-text-faint: 156 163 175;
+
+    /* Borders */
+    --color-border: 226 228 233;
+    --color-border-subtle: 237 239 243;
+
+    /* Status */
+    --color-success: 16 185 129;
+    --color-warning: 245 158 11;
+    --color-error: 239 68 68;
+
+    /* Typography */
+    --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+
+    /* Transitions */
+    --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
   }
-  a:hover {
-    color: #747bff;
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
-  button {
-    background-color: #f9f9f9;
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
   }
+
+  body {
+    background-color: rgb(var(--color-bg-base));
+    color: rgb(var(--color-text-primary));
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-border));
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--color-bg-hover));
+  }
+
+  /* Focus */
+  *:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgb(99 102 241 / 0.4);
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgb(99 102 241 / 0.15);
+    color: rgb(var(--color-text-primary));
+  }
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    border-radius: 0.5rem;
+    padding: 0.375rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+    cursor: pointer;
+    user-select: none;
+    border: none;
+  }
+  .btn:disabled { opacity: 0.4; pointer-events: none; }
+
+  .btn-primary {
+    background: rgb(99 102 241);
+    color: #fff;
+    box-shadow: 0 1px 3px rgb(99 102 241 / 0.3);
+  }
+  .btn-primary:hover { background: rgb(79 70 229); }
+  .btn-primary:active { background: rgb(67 56 202); }
+
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.3rem;
+    border-radius: 0.375rem;
+    color: rgb(var(--color-text-muted));
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+  .btn-icon:hover {
+    color: rgb(var(--color-text-secondary));
+    background: rgb(var(--color-bg-hover));
+  }
+
+  .input {
+    width: 100%;
+    border-radius: 0.5rem;
+    border: 1px solid rgb(var(--color-border));
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    color: rgb(var(--color-text-primary));
+    background: rgb(var(--color-bg-surface));
+    outline: none;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+  .input::placeholder { color: rgb(var(--color-text-faint)); }
+  .input:focus {
+    border-color: rgb(99 102 241 / 0.5);
+    box-shadow: 0 0 0 3px rgb(99 102 241 / 0.1);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 99px;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+
+  .badge-live {
+    background: rgb(16 185 129 / 0.1);
+    color: rgb(5 150 105);
+    border: 1px solid rgb(16 185 129 / 0.25);
+  }
+
+  .badge-primary {
+    background: rgb(99 102 241 / 0.1);
+    color: rgb(79 70 229);
+    border: 1px solid rgb(99 102 241 / 0.2);
+  }
+
+  .toolbar-sep {
+    width: 1px;
+    height: 1.125rem;
+    background: rgb(var(--color-border));
+    margin: 0 0.125rem;
+    flex-shrink: 0;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+}
+
+/* ── ProseMirror editor styles ── */
+
+/* The .tiptap wrapper TipTap renders must fill the card — never shrink */
+.tiptap {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+}
+
+/* Suppress the global focus-visible ring on ProseMirror and all its children.
+   Focus feedback is handled by the .editor-card container instead. */
+.ProseMirror:focus-visible,
+.ProseMirror *:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.ProseMirror {
+  outline: none;
+  width: 100%;
+  min-height: 100%;
+  caret-color: rgb(99 102 241);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  color: rgb(var(--color-text-primary));
+}
+
+.ProseMirror > * + * { margin-top: 0.6em; }
+.ProseMirror p { margin: 0 0 0.6em; }
+
+.ProseMirror h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: rgb(var(--color-text-primary));
+  margin: 1.4em 0 0.4em;
+  line-height: 1.25;
+}
+.ProseMirror h2 {
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: rgb(var(--color-text-primary));
+  margin: 1.2em 0 0.35em;
+  line-height: 1.3;
+}
+.ProseMirror h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: rgb(var(--color-text-secondary));
+  margin: 1em 0 0.3em;
+  line-height: 1.4;
+}
+
+.ProseMirror strong { font-weight: 600; color: rgb(var(--color-text-primary)); }
+.ProseMirror em { color: rgb(var(--color-text-secondary)); font-style: italic; }
+.ProseMirror s { color: rgb(var(--color-text-faint)); text-decoration: line-through; }
+
+.ProseMirror ul, .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.4em 0 0.6em;
+}
+.ProseMirror li { margin: 0.2em 0; line-height: 1.75; }
+.ProseMirror ul li::marker { color: rgb(var(--color-text-faint)); }
+.ProseMirror ol li::marker { color: rgb(var(--color-text-faint)); font-size: 0.875em; }
+
+.ProseMirror code {
+  background: rgb(var(--color-bg-overlay));
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  color: rgb(99 102 241);
+}
+
+.ProseMirror pre {
+  background: rgb(var(--color-bg-elevated));
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0.75em 0;
+  overflow-x: auto;
+}
+.ProseMirror pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.85rem;
+  color: rgb(var(--color-text-secondary));
+}
+
+.ProseMirror blockquote {
+  border-left: 3px solid rgb(99 102 241 / 0.4);
+  padding-left: 1rem;
+  margin: 0.75em 0;
+  color: rgb(var(--color-text-muted));
+  font-style: italic;
+}
+
+/* ── Editor card container ── */
+.editor-card {
+  background: rgb(var(--color-bg-surface));
+  border: 1px solid rgb(var(--color-border-subtle));
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.04);
+  cursor: text;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+  padding: 40px 48px;
+  min-height: calc(100vh - 160px);
+  position: relative;
+}
+
+.editor-card:hover {
+  border-color: rgb(var(--color-border));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.06);
+}
+
+.editor-card:focus-within {
+  border-color: rgb(99 102 241 / 0.5);
+  box-shadow: 0 0 0 3px rgb(99 102 241 / 0.1), 0 2px 8px rgb(0 0 0 / 0.06);
+}
+
+/* Placeholder — sits inside the card, above ProseMirror content */
+.editor-placeholder {
+  position: absolute;
+  top: 40px;
+  left: 48px;
+  right: 48px;
+  pointer-events: none;
+  user-select: none;
+  color: rgb(var(--color-text-faint));
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  transition: opacity 120ms ease;
+}
+
+.editor-card:focus-within .editor-placeholder {
+  opacity: 0.45;
+}
+.collaboration-cursor__caret {
+  border-left: 2px solid;
+  border-right: 2px solid;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+  position: relative;
+  word-break: normal;
+}
+.collaboration-cursor__label {
+  border-radius: 3px 3px 3px 0;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  left: -1px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  position: absolute;
+  top: -1.4em;
+  user-select: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ── Modal animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.94) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Toast ── */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.toast {
+  animation: toastIn 200ms ease forwards;
 }
