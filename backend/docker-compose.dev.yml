@@ -1,0 +1,124 @@
+# Development compose — hot reload via ts-node-dev + volume mount.
+# Usage:
+#   docker compose -f docker-compose.dev.yml up
+#   docker compose -f docker-compose.dev.yml down --volumes
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: sharespace-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sharespace
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: sharespace-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: sharespace-api-dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      API_PORT: 4000
+      # Database
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: sharespace
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PUBSUB_ENABLED: "true"
+      # Auth
+      JWT_SECRET: dev_jwt_secret_replace_in_production
+      JWT_REFRESH_SECRET: dev_jwt_refresh_secret_replace_in_production
+      # CORS — allow both Vite default ports
+      CORS_ORIGIN: http://localhost:3000,http://localhost:5173
+      # AI (optional — mock responses returned if not set)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # Observability
+      LOG_LEVEL: debug
+    ports:
+      - "4000:4000"
+    volumes:
+      # Mount local source into container — edits reflect instantly
+      - .:/app
+      # Prevent host node_modules from overwriting container's
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npm run start:dev
+
+  yjs:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: sharespace-yjs-dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      YJS_PORT: 3001
+      # Database
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: sharespace
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PUBSUB_ENABLED: "true"
+      # Auth — must match api service
+      JWT_SECRET: dev_jwt_secret_replace_in_production
+      JWT_REFRESH_SECRET: dev_jwt_refresh_secret_replace_in_production
+      # AI not needed by yjs server
+      # Observability
+      LOG_LEVEL: debug
+      SNAPSHOT_INTERVAL_MS: "30000"
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npm run start:dev:yjs
+
+volumes:
+  postgres_data:
+  redis_data:

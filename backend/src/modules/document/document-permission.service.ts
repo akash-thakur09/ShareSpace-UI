@@ -6,12 +6,15 @@ import {
   DocumentRole,
   ROLE_HIERARCHY,
 } from './entities/document-permission.entity';
+import { User } from '../auth/entities/user.entity';
 
 @Injectable()
 export class DocumentPermissionService {
   constructor(
     @InjectRepository(DocumentPermission)
     private readonly permRepo: Repository<DocumentPermission>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
   ) {}
 
   /** Grant a role to a user on a document. Upserts if a record already exists. */
@@ -66,5 +69,19 @@ export class DocumentPermissionService {
 
   async revokeRole(documentId: string, userId: string): Promise<void> {
     await this.permRepo.delete({ documentId, userId });
+  }
+
+  /** List all document IDs accessible by a user. */
+  async listDocumentIdsForUser(userId: string): Promise<string[]> {
+    const perms = await this.permRepo.find({
+      where: { userId },
+      select: ['documentId'],
+    });
+    return perms.map((p) => p.documentId);
+  }
+
+  /** Find a user by email (used when granting permissions by email). */
+  async findUserByEmail(email: string): Promise<User | null> {
+    return this.userRepo.findOne({ where: { email } });
   }
 }

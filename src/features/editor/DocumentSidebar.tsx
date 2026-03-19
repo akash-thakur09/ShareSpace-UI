@@ -1,21 +1,27 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { CreateDocModal } from "../../components/ui/CreateDocModal";
-
-interface DocItem {
-  id: string;
-  title: string;
-  date: string;
-  color: string;
-}
+import { documentService, type Document } from "../../services/document.service";
 
 const COLORS = ["#6366f1", "#06b6d4", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6"];
 
-const DEFAULT_DOCS: DocItem[] = [
-  { id: "1", title: "Project Proposal", date: "2 hours ago", color: "#6366f1" },
-  { id: "2", title: "Meeting Notes",    date: "Yesterday",   color: "#06b6d4" },
-  { id: "3", title: "Design System",    date: "2 days ago",  color: "#f59e0b" },
-  { id: "4", title: "API Documentation",date: "1 week ago",  color: "#10b981" },
-];
+function colorForId(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return COLORS[h % COLORS.length];
+}
+
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins  = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days  = Math.floor(diff / 86_400_000);
+  if (mins < 1)   return "Just now";
+  if (mins < 60)  return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7)   return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
 
 const DocIcon = ({ color }: { color: string }) => (
   <div
@@ -30,19 +36,36 @@ const DocIcon = ({ color }: { color: string }) => (
 );
 
 export function DocumentSidebar() {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [activeId, setActiveId] = useState("1");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [docs, setDocs] = useState<DocItem[]>(DEFAULT_DOCS);
-  const [search, setSearch] = useState("");
+  const { documentId: activeDocId } = useParams<{ documentId: string }>();
+  const navigate = useNavigate();
 
-  const handleCreated = (publicId: string, title: string) => {
-    const color = COLORS[docs.length % COLORS.length];
-    setDocs(prev => [{ id: publicId, title, date: "Just now", color }, ...prev]);
-    setActiveId(publicId);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [createOpen, setCreateOpen]   = useState(false);
+  const [docs, setDocs]               = useState<Document[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState("");
+
+  const fetchDocs = useCallback(async () => {
+    try {
+      const list = await documentService.list();
+      setDocs(list);
+    } catch (err) {
+      console.error("Failed to load documents:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  const handleCreated = (publicId: string) => {
+    fetchDocs(); // refresh list
+    navigate(`/doc/${publicId}`);
   };
 
-  const filtered = docs.filter(d => d.title.toLowerCase().includes(search.toLowerCase()));
+  const filtered = docs.filter(d =>
+    d.title.toLowerCase().includes(search.toLowerCase())
+  );
 
   if (isCollapsed) {
     return (
@@ -74,11 +97,7 @@ export function DocumentSidebar() {
             Documents
           </span>
           <div className="flex items-center gap-0.5">
-            <button
-              className="btn-icon"
-              title="New document"
-              onClick={() => setCreateOpen(true)}
-            >
+            <button className="btn-icon" title="New document" onClick={() => setCreateOpen(true)}>
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
@@ -113,33 +132,44 @@ export function DocumentSidebar() {
 
         {/* List */}
         <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div
+                className="h-4 w-4 animate-spin rounded-full border-2"
+                style={{ borderColor: "rgb(var(--color-border))", borderTopColor: "rgb(99 102 241)" }}
+              />
+            </div>
+          ) : filtered.length === 0 ? (
             <p className="text-xs text-center py-6" style={{ color: "rgb(var(--color-text-faint))" }}>
-              No documents found
+              {search ? "No documents found" : "No documents yet"}
             </p>
-          ) : filtered.map((doc) => (
-            <button
-              key={doc.id}
-              onClick={() => setActiveId(doc.id)}
-              className="w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2.5 transition-all border-none cursor-pointer"
-              style={{ background: activeId === doc.id ? "rgb(var(--color-bg-hover))" : "transparent" }}
-              onMouseEnter={e => { if (activeId !== doc.id) e.currentTarget.style.background = "rgb(var(--color-bg-elevated))"; }}
-              onMouseLeave={e => { if (activeId !== doc.id) e.currentTarget.style.background = "transparent"; }}
-            >
-              <DocIcon color={doc.color} />
-              <div className="flex-1 min-w-0">
-                <p
-                  className="text-xs font-medium truncate"
-                  style={{ color: activeId === doc.id ? "rgb(var(--color-text-primary))" : "rgb(var(--color-text-secondary))" }}
-                >
-                  {doc.title}
-                </p>
-                <p className="text-xs mt-0.5 truncate" style={{ color: "rgb(var(--color-text-faint))" }}>
-                  {doc.date}
-                </p>
-              </div>
-            </button>
-          ))}
+          ) : filtered.map((doc) => {
+            const color    = colorForId(doc.publicId);
+            const isActive = doc.publicId === activeDocId;
+            return (
+              <button
+                key={doc.publicId}
+                onClick={() => navigate(`/doc/${doc.publicId}`)}
+                className="w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2.5 transition-all border-none cursor-pointer"
+                style={{ background: isActive ? "rgb(var(--color-bg-hover))" : "transparent" }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgb(var(--color-bg-elevated))"; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+              >
+                <DocIcon color={color} />
+                <div className="flex-1 min-w-0">
+                  <p
+                    className="text-xs font-medium truncate"
+                    style={{ color: isActive ? "rgb(var(--color-text-primary))" : "rgb(var(--color-text-secondary))" }}
+                  >
+                    {doc.title}
+                  </p>
+                  <p className="text-xs mt-0.5 truncate" style={{ color: "rgb(var(--color-text-faint))" }}>
+                    {relativeTime(doc.updatedAt)}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         {/* Footer */}
@@ -149,11 +179,13 @@ export function DocumentSidebar() {
             style={{ color: "rgb(var(--color-text-muted))", background: "transparent" }}
             onMouseEnter={e => { e.currentTarget.style.background = "rgb(var(--color-bg-elevated))"; e.currentTarget.style.color = "rgb(var(--color-text-secondary))"; }}
             onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgb(var(--color-text-muted))"; }}
+            onClick={fetchDocs}
+            title="Refresh document list"
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            View History
+            Refresh
           </button>
         </div>
       </aside>

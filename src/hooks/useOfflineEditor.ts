@@ -4,34 +4,34 @@
  * Manages the full offline-first Yjs lifecycle for a document:
  *
  *   1. Creates a Y.Doc
- *   2. Attaches IndexeddbPersistence — loads local state synchronously
- *      before the WebSocket even connects, so the editor is never blank
- *   3. Attaches WebsocketProvider — connects to the Yjs server
- *      When the connection restores, Yjs CRDT merge resolves conflicts
- *      automatically; no manual queue needed
+ *   2. Attaches IndexeddbPersistence — loads local state before WS connects
+ *   3. Attaches WebsocketProvider — connects to the Yjs server with JWT auth
  *
- * The editor renders immediately from IndexedDB (step 2).
- * Server sync happens in the background (step 3).
- *
- * Offline edits are stored in IndexedDB and merged on reconnect.
+ * The Yjs server expects: ws://host?doc=<publicId>&token=<accessJwt>
+ * Close code 1008 = policy violation (auth rejected) — stop retrying.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { WebsocketProvider } from 'y-websocket';
+import { getStoredAccessToken } from '../contexts/auth-token';
 
 const YJS_SERVER_URL = import.meta.env.VITE_YJS_SERVER_URL || 'ws://localhost:3001';
+
+// Close codes that mean "don't retry" — auth errors, policy violations
+const PERMANENT_CLOSE_CODES = new Set([1008, 1003, 4001, 4003, 4004]);
 
 export interface OfflineEditorState {
   ydoc: Y.Doc;
   provider: WebsocketProvider | null;
   /** True once IndexedDB has loaded — safe to mount the editor */
   localReady: boolean;
+  /** Set when the server permanently rejects the connection */
+  wsError: string | null;
 }
 
 export function useOfflineEditor(documentId: string | undefined): OfflineEditorState {
-  // Stable Y.Doc — never recreated for the same documentId
   const ydocRef = useRef<Y.Doc | null>(null);
   if (!ydocRef.current) ydocRef.current = new Y.Doc();
 
@@ -40,52 +40,64 @@ export function useOfflineEditor(documentId: string | undefined): OfflineEditorS
 
   const [localReady, setLocalReady] = useState(false);
   const [provider,   setProvider]   = useState<WebsocketProvider | null>(null);
+  const [wsError,    setWsError]    = useState<string | null>(null);
 
   useEffect(() => {
     if (!documentId) return;
 
-    const ydoc = ydocRef.current!;
+    const ydoc  = ydocRef.current!;
+    const token = getStoredAccessToken();
+
+    setWsError(null);
 
     // ── 1. IndexedDB persistence ──────────────────────────────────────────
-    // Persists every Yjs update to IndexedDB automatically.
-    // `synced` fires once the stored state has been applied to ydoc —
-    // at that point the editor can render without waiting for the server.
     const idb = new IndexeddbPersistence(`yjs:${documentId}`, ydoc);
     idbRef.current = idb;
-
-    idb.on('synced', () => {
-      setLocalReady(true);
-    });
+    idb.on('synced', () => setLocalReady(true));
 
     // ── 2. WebSocket provider ─────────────────────────────────────────────
-    // y-websocket handles reconnection automatically with exponential backoff.
-    // When it reconnects it runs the Yjs sync protocol — any updates made
-    // offline (stored in IndexedDB and in the Y.Doc in memory) are sent to
-    // the server and remote updates are applied locally. Yjs CRDTs merge
-    // without conflicts.
-    const prov = new WebsocketProvider(YJS_SERVER_URL, documentId, ydoc, {
-      connect: true,
-      // Disable the built-in cross-tab BroadcastChannel — we use IndexedDB
-      // as the shared source of truth instead, which is more reliable across
-      // tab refresh and long offline periods.
-      disableBc: false,
-    });
+    const prov = new WebsocketProvider(
+      YJS_SERVER_URL,
+      documentId,
+      ydoc,
+      {
+        connect: !!token,
+        disableBc: false,
+        // Pass auth params — server reads these from the query string
+        params: token ? { doc: documentId, token } : {},
+      },
+    );
     providerRef.current = prov;
     setProvider(prov);
 
+    // Stop retrying on permanent server rejections (auth errors = code 1008)
+    const onClose = (event: CloseEvent) => {
+      if (PERMANENT_CLOSE_CODES.has(event.code)) {
+        console.warn(`[Yjs] WS closed permanently (code ${event.code}): ${event.reason}`);
+        prov.disconnect();
+        setWsError(event.reason || `Connection rejected (${event.code})`);
+      }
+    };
+
+    // y-websocket fires 'connection-close' with the CloseEvent
+    prov.on('connection-close', onClose);
+
     return () => {
+      prov.off('connection-close', onClose);
       idb.destroy();
       prov.destroy();
-      idbRef.current    = null;
+      idbRef.current      = null;
       providerRef.current = null;
       setProvider(null);
       setLocalReady(false);
+      setWsError(null);
     };
   }, [documentId]);
 
   return {
-    ydoc:       ydocRef.current,
+    ydoc:      ydocRef.current,
     provider,
     localReady,
+    wsError,
   };
 }

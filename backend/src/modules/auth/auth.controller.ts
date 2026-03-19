@@ -25,7 +25,7 @@ const cookieOptions = {
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'strict' as const,
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
-  path: '/auth',
+  path: '/',
 };
 
 @Controller('auth')
@@ -39,9 +39,9 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Response({ passthrough: true }) res: ExpressResponse,
   ) {
-    const tokens = await this.authService.register(dto);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, cookieOptions);
-    return { accessToken: tokens.accessToken };
+    const result = await this.authService.register(dto);
+    res.cookie(REFRESH_COOKIE, result.tokens.refreshToken, cookieOptions);
+    return { accessToken: result.tokens.accessToken, ...result.user };
   }
 
   // 10 requests per minute per IP for login
@@ -52,9 +52,9 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Response({ passthrough: true }) res: ExpressResponse,
   ) {
-    const tokens = await this.authService.login(dto);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, cookieOptions);
-    return { accessToken: tokens.accessToken };
+    const result = await this.authService.login(dto);
+    res.cookie(REFRESH_COOKIE, result.tokens.refreshToken, cookieOptions);
+    return { accessToken: result.tokens.accessToken, ...result.user };
   }
 
   @HttpCode(HttpStatus.OK)
@@ -64,11 +64,10 @@ export class AuthController {
     @Body() dto: RefreshTokenDto,
     @Response({ passthrough: true }) res: ExpressResponse,
   ) {
-    // Accept token from httpOnly cookie first, fall back to body
     const rawToken = (req.cookies?.[REFRESH_COOKIE] as string | undefined) ?? dto.refreshToken;
-    const tokens = await this.authService.refresh(rawToken);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, cookieOptions);
-    return { accessToken: tokens.accessToken };
+    const result = await this.authService.refresh(rawToken);
+    res.cookie(REFRESH_COOKIE, result.tokens.refreshToken, cookieOptions);
+    return { accessToken: result.tokens.accessToken, ...result.user };
   }
 
   @UseGuards(JwtAuthGuard)

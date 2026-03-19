@@ -16,10 +16,13 @@ export class User {
   @Index()
   email: string;
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  name: string | null;
+
   @Column({ select: false })
   password: string;
 
-  @Column({ name: 'refresh_token_hash', nullable: true, select: false })
+  @Column({ name: 'refresh_token_hash', type: 'varchar', nullable: true, select: false })
   refreshTokenHash: string | null;
 
   @Column({ name: 'token_version', default: 0 })

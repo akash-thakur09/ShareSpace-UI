@@ -10,8 +10,10 @@ import {
   HttpStatus,
   UseGuards,
   Request,
+  NotFoundException,
 } from '@nestjs/common';
 import { DocumentService } from './document.service';
+import { DocumentPermissionService } from './document-permission.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -23,7 +25,10 @@ import { User } from '../auth/entities/user.entity';
 @Controller('documents')
 @UseGuards(JwtAuthGuard) // all document routes require authentication
 export class DocumentController {
-  constructor(private readonly documentService: DocumentService) {}
+  constructor(
+    private readonly documentService: DocumentService,
+    private readonly permissionService: DocumentPermissionService,
+  ) {}
 
   /** POST /documents — authenticated user becomes owner */
   @Post()
@@ -39,6 +44,19 @@ export class DocumentController {
       createdAt: document.createdAt,
       metadata: document.metadata,
     };
+  }
+
+  /** GET /documents — list all documents accessible by the current user */
+  @Get()
+  async list(@Request() req: { user: User }) {
+    const documents = await this.documentService.listForUser(req.user.id);
+    return documents.map((d) => ({
+      publicId: d.publicId,
+      title: d.title,
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+      metadata: d.metadata,
+    }));
   }
 
   /** GET /documents/:publicId — viewer+ */
@@ -82,6 +100,67 @@ export class DocumentController {
   async remove(@Param('publicId') publicId: string) {
     await this.documentService.deleteByPublicId(publicId);
   }
+
+  // ── Permissions ────────────────────────────────────────────────────────────
+
+  /** GET /documents/:publicId/permissions — owner only */
+  @Get(':publicId/permissions')
+  @RequireDocumentRole(DocumentRole.OWNER)
+  @UseGuards(DocumentRoleGuard)
+  async listPermissions(@Param('publicId') publicId: string) {
+    const document = await this.documentService.findByPublicId(publicId);
+    const perms = await this.permissionService.listPermissions(document.id);
+    return perms.map((p) => ({
+      userId: p.userId,
+      email: p.user?.email,
+      role: p.role,
+    }));
+  }
+
+  /** POST /documents/:publicId/permissions — owner only, grant role by email */
+  @Post(':publicId/permissions')
+  @HttpCode(HttpStatus.CREATED)
+  @RequireDocumentRole(DocumentRole.OWNER)
+  @UseGuards(DocumentRoleGuard)
+  async addPermission(
+    @Param('publicId') publicId: string,
+    @Body() body: { email: string; role: DocumentRole },
+  ) {
+    const document = await this.documentService.findByPublicId(publicId);
+    const user = await this.permissionService.findUserByEmail(body.email);
+    if (!user) throw new NotFoundException(`User with email ${body.email} not found`);
+    await this.permissionService.grantRole(document.id, user.id, body.role);
+    return { userId: user.id, email: user.email, role: body.role };
+  }
+
+  /** PUT /documents/:publicId/permissions/:userId — owner only, update role */
+  @Put(':publicId/permissions/:userId')
+  @RequireDocumentRole(DocumentRole.OWNER)
+  @UseGuards(DocumentRoleGuard)
+  async updatePermission(
+    @Param('publicId') publicId: string,
+    @Param('userId') userId: string,
+    @Body() body: { role: DocumentRole },
+  ) {
+    const document = await this.documentService.findByPublicId(publicId);
+    await this.permissionService.grantRole(document.id, userId, body.role);
+    return { userId, role: body.role };
+  }
+
+  /** DELETE /documents/:publicId/permissions/:userId — owner only, revoke */
+  @Delete(':publicId/permissions/:userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireDocumentRole(DocumentRole.OWNER)
+  @UseGuards(DocumentRoleGuard)
+  async removePermission(
+    @Param('publicId') publicId: string,
+    @Param('userId') userId: string,
+  ) {
+    const document = await this.documentService.findByPublicId(publicId);
+    await this.permissionService.revokeRole(document.id, userId);
+  }
+
+  // ── Snapshots ──────────────────────────────────────────────────────────────
 
   /** POST /documents/:publicId/snapshots — editor+ */
   @Post(':publicId/snapshots')
@@ -129,3 +208,4 @@ export class DocumentController {
     };
   }
 }
+

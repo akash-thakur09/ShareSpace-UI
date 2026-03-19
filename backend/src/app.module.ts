@@ -6,6 +6,7 @@ import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { DocumentModule } from './modules/document/document.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AiModule } from './modules/ai/ai.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { GlobalExceptionFilter } from './observability/global-exception.filter';
 
@@ -39,6 +40,7 @@ import { GlobalExceptionFilter } from './observability/global-exception.filter';
     DocumentModule,
     HealthModule,
     AuthModule,
+    AiModule,
     ObservabilityModule,
   ],
   providers: [
