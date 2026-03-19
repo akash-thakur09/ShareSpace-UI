@@ -14,6 +14,8 @@ interface EditorHeaderProps {
   documentId?: string;
   initialTitle?: string;
   awarenessUsers?: AwarenessUser[];
+  onTitleSaved?: (title: string) => void;
+  readOnly?: boolean;
 }
 
 export function EditorHeader({
@@ -21,6 +23,8 @@ export function EditorHeader({
   documentId,
   initialTitle = "Untitled Document",
   awarenessUsers = [],
+  onTitleSaved,
+  readOnly = false,
 }: EditorHeaderProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -38,6 +42,7 @@ export function EditorHeader({
     if (!documentId || !newTitle.trim()) return;
     try {
       await documentService.update(documentId, { title: newTitle.trim() });
+      onTitleSaved?.(newTitle.trim());
     } catch (err) {
       console.error("Failed to save title:", err);
     }
@@ -89,7 +94,7 @@ export function EditorHeader({
 
           {/* Document title */}
           <div className="flex items-center gap-2">
-            {isEditing ? (
+            {isEditing && !readOnly ? (
               <input
                 type="text"
                 value={title}
@@ -102,12 +107,16 @@ export function EditorHeader({
               />
             ) : (
               <button
-                onClick={() => setIsEditing(true)}
-                className="text-sm font-medium px-2 py-1 rounded-md transition-colors border-none cursor-pointer"
-                style={{ color: "rgb(var(--color-text-secondary))", background: "transparent" }}
-                onMouseEnter={e => (e.currentTarget.style.background = "rgb(var(--color-bg-hover))")}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                title="Click to rename"
+                onClick={() => { if (!readOnly) setIsEditing(true); }}
+                className="text-sm font-medium px-2 py-1 rounded-md transition-colors border-none"
+                style={{
+                  color: "rgb(var(--color-text-secondary))",
+                  background: "transparent",
+                  cursor: readOnly ? "default" : "pointer",
+                }}
+                onMouseEnter={e => { if (!readOnly) e.currentTarget.style.background = "rgb(var(--color-bg-hover))"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                title={readOnly ? title : "Click to rename"}
               >
                 {title}
               </button>

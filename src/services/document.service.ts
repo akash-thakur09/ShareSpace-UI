@@ -2,12 +2,22 @@ import { getStoredAccessToken } from '../contexts/auth-token';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+export type DocumentRole = 'owner' | 'editor' | 'commenter' | 'viewer';
+
 export interface Document {
   publicId: string;
   title: string;
   createdAt: string;
   updatedAt: string;
   metadata?: Record<string, any>;
+  role: DocumentRole;
+  isPinned: boolean;
+  lastAccessedAt?: string;
+}
+
+export interface DocumentListResponse {
+  owned: Document[];
+  shared: Document[];
 }
 
 export interface CreateDocumentDto {
@@ -34,6 +44,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message || `Request failed: ${res.status}`);
   }
+  if (res.status === 204) return undefined as T;
   return res.json();
 }
 
@@ -42,7 +53,7 @@ export const documentService = {
     apiFetch<Document>('/documents', { method: 'POST', body: JSON.stringify(dto) }),
 
   list: () =>
-    apiFetch<Document[]>('/documents'),
+    apiFetch<DocumentListResponse>('/documents'),
 
   get: (publicId: string) =>
     apiFetch<Document>(`/documents/${publicId}`),
@@ -52,6 +63,9 @@ export const documentService = {
 
   delete: (publicId: string) =>
     apiFetch<void>(`/documents/${publicId}`, { method: 'DELETE' }),
+
+  togglePin: (publicId: string) =>
+    apiFetch<{ isPinned: boolean }>(`/documents/${publicId}/pin`, { method: 'POST' }),
 
   createSnapshot: (publicId: string) =>
     apiFetch<{ id: string; version: number; createdAt: string }>(

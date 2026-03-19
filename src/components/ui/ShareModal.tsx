@@ -10,9 +10,10 @@ import {
 // ─── Role badge ──────────────────────────────────────────────────────────────
 
 const ROLE_STYLES: Record<PermissionRole, { bg: string; text: string; label: string }> = {
-  owner:  { bg: 'rgb(99 102 241 / 0.1)',  text: 'rgb(99 102 241)',  label: 'Owner'  },
-  editor: { bg: 'rgb(16 185 129 / 0.1)',  text: 'rgb(5 150 105)',   label: 'Editor' },
-  viewer: { bg: 'rgb(107 114 128 / 0.1)', text: 'rgb(75 85 99)',    label: 'Viewer' },
+  owner:     { bg: 'rgb(99 102 241 / 0.1)',  text: 'rgb(99 102 241)',  label: 'Owner'     },
+  editor:    { bg: 'rgb(16 185 129 / 0.1)',  text: 'rgb(5 150 105)',   label: 'Editor'    },
+  commenter: { bg: 'rgb(245 158 11 / 0.1)',  text: 'rgb(180 83 9)',    label: 'Commenter' },
+  viewer:    { bg: 'rgb(107 114 128 / 0.1)', text: 'rgb(75 85 99)',    label: 'Viewer'    },
 };
 
 function RoleBadge({ role }: { role: PermissionRole }) {
@@ -58,8 +59,8 @@ function RoleSelect({
   excludeOwner?: boolean;
 }) {
   const roles: PermissionRole[] = excludeOwner
-    ? ['editor', 'viewer']
-    : ['owner', 'editor', 'viewer'];
+    ? ['editor', 'commenter', 'viewer']
+    : ['owner', 'editor', 'commenter', 'viewer'];
   return (
     <select
       value={value}

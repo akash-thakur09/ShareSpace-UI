@@ -11,12 +11,17 @@ import { useOfflineEditor } from '../../hooks/useOfflineEditor';
 import { useConnectionStatus } from '../../hooks/useConnectionStatus';
 import { useAwareness } from '../presence/useAwareness';
 import { useAuth } from '../../contexts/useAuth';
-import { documentService } from '../../services/document.service';
+import { documentService, type DocumentRole } from '../../services/document.service';
 
 function colorFromString(str: string) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
   return `hsl(${Math.abs(hash) % 360}, 65%, 50%)`;
+}
+
+/** viewer and commenter cannot edit document content */
+function isReadOnlyRole(role: DocumentRole | null): boolean {
+  return role === 'viewer' || role === 'commenter';
 }
 
 export function EditorCanvas() {
@@ -30,14 +35,22 @@ export function EditorCanvas() {
   const connectionStatus = useConnectionStatus(provider);
   const [isEmpty, setIsEmpty] = useState(true);
   const [docTitle, setDocTitle] = useState('Untitled Document');
+  const [savedTitle, setSavedTitle] = useState('Untitled Document');
+  const [userRole, setUserRole] = useState<DocumentRole | null>(null);
 
-  // Load document metadata (title) from REST API
+  // Load document metadata (title + role) from REST API
   useEffect(() => {
     if (!documentId) return;
     documentService.get(documentId)
-      .then(doc => setDocTitle(doc.title))
-      .catch(() => {}); // non-fatal — title stays as default
+      .then(doc => {
+        setDocTitle(doc.title);
+        setSavedTitle(doc.title);
+        setUserRole(doc.role ?? null);
+      })
+      .catch(() => {});
   }, [documentId]);
+
+  const readOnly = isReadOnlyRole(userRole);
 
   const userInfo = useMemo(() => ({
     name:  user?.name || user?.email || 'Anonymous',
@@ -52,12 +65,19 @@ export function EditorCanvas() {
       StarterKit,
       Collaboration.configure({ document: ydoc }),
     ],
+    editable: !readOnly,
     editorProps: {
       attributes: { class: 'focus:outline-none' },
     },
     onUpdate: ({ editor: e }) => setIsEmpty(e.isEmpty),
     immediatelyRender: false,
   });
+
+  // Keep editor editable state in sync with role (role may load after editor mounts)
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.setEditable(!readOnly);
+  }, [editor, readOnly]);
 
   // Add CollaborationCursor once provider is ready
   useEffect(() => {
@@ -98,7 +118,7 @@ export function EditorCanvas() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <DocumentSidebar />
+      <DocumentSidebar activeDocTitle={savedTitle} />
 
       <div className="flex flex-1 flex-col min-w-0">
         <EditorHeader
@@ -106,14 +126,16 @@ export function EditorCanvas() {
           documentId={documentId}
           initialTitle={docTitle}
           awarenessUsers={awarenessUsers}
+          onTitleSaved={setSavedTitle}
+          readOnly={readOnly}
         />
 
-        {editor && <EditorToolbar editor={editor} />}
+        {editor && !readOnly && <EditorToolbar editor={editor} />}
 
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-8 py-10">
             {/* Placeholder */}
-            {isEmpty && localReady && (
+            {isEmpty && localReady && !readOnly && (
               <p
                 className="pointer-events-none absolute text-base select-none"
                 style={{ color: 'rgb(var(--color-text-faint))' }}

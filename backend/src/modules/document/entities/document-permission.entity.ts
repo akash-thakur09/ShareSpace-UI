@@ -14,19 +14,21 @@ import { User } from '../../auth/entities/user.entity';
 export enum DocumentRole {
   OWNER = 'owner',
   EDITOR = 'editor',
+  COMMENTER = 'commenter',
   VIEWER = 'viewer',
 }
 
 // Role hierarchy — higher index = more access
 export const ROLE_HIERARCHY: Record<DocumentRole, number> = {
   [DocumentRole.VIEWER]: 0,
-  [DocumentRole.EDITOR]: 1,
-  [DocumentRole.OWNER]: 2,
+  [DocumentRole.COMMENTER]: 1,
+  [DocumentRole.EDITOR]: 2,
+  [DocumentRole.OWNER]: 3,
 };
 
 @Entity('document_permissions')
 @Unique(['documentId', 'userId'])
-@Index(['documentId', 'userId']) // fast lookup per document+user
+@Index(['documentId', 'userId'])
 export class DocumentPermission {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -39,6 +41,9 @@ export class DocumentPermission {
 
   @Column({ type: 'enum', enum: DocumentRole })
   role: DocumentRole;
+
+  @Column({ name: 'is_pinned', type: 'boolean', default: false })
+  isPinned: boolean;
 
   @ManyToOne(() => Document, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'document_id' })

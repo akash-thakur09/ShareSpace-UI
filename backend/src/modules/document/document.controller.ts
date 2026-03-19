@@ -23,7 +23,7 @@ import { DocumentRole } from './entities/document-permission.entity';
 import { User } from '../auth/entities/user.entity';
 
 @Controller('documents')
-@UseGuards(JwtAuthGuard) // all document routes require authentication
+@UseGuards(JwtAuthGuard)
 export class DocumentController {
   constructor(
     private readonly documentService: DocumentService,
@@ -46,25 +46,35 @@ export class DocumentController {
     };
   }
 
-  /** GET /documents — list all documents accessible by the current user */
+  /** GET /documents — returns { owned, shared } */
   @Get()
   async list(@Request() req: { user: User }) {
-    const documents = await this.documentService.listForUser(req.user.id);
-    return documents.map((d) => ({
+    const { owned, shared } = await this.documentService.listForUser(req.user.id);
+    const mapDoc = (d: any) => ({
       publicId: d.publicId,
       title: d.title,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
       metadata: d.metadata,
-    }));
+      role: d.role,
+      isPinned: d.isPinned,
+    });
+    return {
+      owned: owned.map(mapDoc),
+      shared: shared.map(mapDoc),
+    };
   }
 
   /** GET /documents/:publicId — viewer+ */
   @Get(':publicId')
   @RequireDocumentRole(DocumentRole.VIEWER)
   @UseGuards(DocumentRoleGuard)
-  async findOne(@Param('publicId') publicId: string) {
+  async findOne(
+    @Param('publicId') publicId: string,
+    @Request() req: { user: User },
+  ) {
     const document = await this.documentService.findByPublicId(publicId);
+    const perm = await this.permissionService.getPermission(document.id, req.user.id);
     return {
       publicId: document.publicId,
       title: document.title,
@@ -72,6 +82,7 @@ export class DocumentController {
       updatedAt: document.updatedAt,
       lastAccessedAt: document.lastAccessedAt,
       metadata: document.metadata,
+      role: perm?.role ?? null,
     };
   }
 
@@ -101,11 +112,27 @@ export class DocumentController {
     await this.documentService.deleteByPublicId(publicId);
   }
 
+  // ── Pin ────────────────────────────────────────────────────────────────────
+
+  /** POST /documents/:publicId/pin — viewer+ */
+  @Post(':publicId/pin')
+  @HttpCode(HttpStatus.OK)
+  @RequireDocumentRole(DocumentRole.VIEWER)
+  @UseGuards(DocumentRoleGuard)
+  async togglePin(
+    @Param('publicId') publicId: string,
+    @Request() req: { user: User },
+  ) {
+    const document = await this.documentService.findByPublicId(publicId);
+    const isPinned = await this.permissionService.togglePin(document.id, req.user.id);
+    return { isPinned };
+  }
+
   // ── Permissions ────────────────────────────────────────────────────────────
 
-  /** GET /documents/:publicId/permissions — owner only */
+  /** GET /documents/:publicId/permissions — viewer+ (write ops remain owner-only) */
   @Get(':publicId/permissions')
-  @RequireDocumentRole(DocumentRole.OWNER)
+  @RequireDocumentRole(DocumentRole.VIEWER)
   @UseGuards(DocumentRoleGuard)
   async listPermissions(@Param('publicId') publicId: string) {
     const document = await this.documentService.findByPublicId(publicId);
@@ -113,6 +140,7 @@ export class DocumentController {
     return perms.map((p) => ({
       userId: p.userId,
       email: p.user?.email,
+      name: p.user?.name ?? undefined,
       role: p.role,
     }));
   }
@@ -130,7 +158,7 @@ export class DocumentController {
     const user = await this.permissionService.findUserByEmail(body.email);
     if (!user) throw new NotFoundException(`User with email ${body.email} not found`);
     await this.permissionService.grantRole(document.id, user.id, body.role);
-    return { userId: user.id, email: user.email, role: body.role };
+    return { userId: user.id, email: user.email, name: user.name ?? undefined, role: body.role };
   }
 
   /** PUT /documents/:publicId/permissions/:userId — owner only, update role */
@@ -144,7 +172,8 @@ export class DocumentController {
   ) {
     const document = await this.documentService.findByPublicId(publicId);
     await this.permissionService.grantRole(document.id, userId, body.role);
-    return { userId, role: body.role };
+    const targetUser = await this.permissionService.findUserById(userId);
+    return { userId, email: targetUser?.email, name: targetUser?.name ?? undefined, role: body.role };
   }
 
   /** DELETE /documents/:publicId/permissions/:userId — owner only, revoke */
@@ -170,11 +199,7 @@ export class DocumentController {
   async createSnapshot(@Param('publicId') publicId: string) {
     const document = await this.documentService.findByPublicId(publicId);
     const snapshot = await this.documentService.createSnapshot(document.id);
-    return {
-      id: snapshot.id,
-      version: snapshot.version,
-      createdAt: snapshot.createdAt,
-    };
+    return { id: snapshot.id, version: snapshot.version, createdAt: snapshot.createdAt };
   }
 
   /** GET /documents/:publicId/snapshots — viewer+ */
@@ -208,4 +233,3 @@ export class DocumentController {
     };
   }
 }
-
