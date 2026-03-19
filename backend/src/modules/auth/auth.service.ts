@@ -19,6 +19,11 @@ export interface TokenPair {
   refreshToken: string;
 }
 
+export interface AuthResult {
+  tokens: TokenPair;
+  user: { id: string; email: string; name: string | null };
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -27,9 +32,9 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<TokenPair> {
+  async register(dto: RegisterDto): Promise<AuthResult> {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const user = this.userRepo.create({ email: dto.email, password: passwordHash });
+    const user = this.userRepo.create({ email: dto.email, password: passwordHash, name: dto.name ?? null });
 
     try {
       await this.userRepo.save(user);
@@ -40,13 +45,14 @@ export class AuthService {
       throw err;
     }
 
-    return this.issueTokens(user);
+    const tokens = await this.issueTokens(user);
+    return { tokens, user: { id: user.id, email: user.email, name: user.name } };
   }
 
-  async login(dto: LoginDto): Promise<TokenPair> {
+  async login(dto: LoginDto): Promise<AuthResult> {
     const user = await this.userRepo.findOne({
       where: { email: dto.email },
-      select: ['id', 'email', 'password', 'tokenVersion'],
+      select: ['id', 'email', 'name', 'password', 'tokenVersion'],
     });
 
     if (!user) throw new UnauthorizedException('Invalid credentials');
@@ -54,10 +60,11 @@ export class AuthService {
     const passwordMatch = await bcrypt.compare(dto.password, user.password);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
-    return this.issueTokens(user);
+    const tokens = await this.issueTokens(user);
+    return { tokens, user: { id: user.id, email: user.email, name: user.name } };
   }
 
-  async refresh(rawRefreshToken: string): Promise<TokenPair> {
+  async refresh(rawRefreshToken: string): Promise<AuthResult> {
     let payload: { sub: string; email: string; ver: number };
 
     try {
@@ -70,7 +77,7 @@ export class AuthService {
 
     const user = await this.userRepo.findOne({
       where: { id: payload.sub },
-      select: ['id', 'email', 'refreshTokenHash', 'tokenVersion'],
+      select: ['id', 'email', 'name', 'refreshTokenHash', 'tokenVersion'],
     });
 
     if (!user || !user.refreshTokenHash) throw new UnauthorizedException('Invalid refresh token');
@@ -81,7 +88,8 @@ export class AuthService {
     const tokenMatch = await bcrypt.compare(rawRefreshToken, user.refreshTokenHash);
     if (!tokenMatch) throw new UnauthorizedException('Invalid refresh token');
 
-    return this.issueTokens(user);
+    const tokens = await this.issueTokens(user);
+    return { tokens, user: { id: user.id, email: user.email, name: user.name } };
   }
 
   async logout(userId: string): Promise<void> {

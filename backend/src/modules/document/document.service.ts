@@ -47,6 +47,15 @@ export class DocumentService {
     return saved;
   }
 
+  async listForUser(userId: string): Promise<Document[]> {
+    const ids = await this.permissionService.listDocumentIdsForUser(userId);
+    if (ids.length === 0) return [];
+    return this.documentRepository.find({
+      where: ids.map((id) => ({ id })),
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
   async findByPublicId(publicId: string): Promise<Document> {
     const document = await this.documentRepository.findOne({
       where: { publicId },

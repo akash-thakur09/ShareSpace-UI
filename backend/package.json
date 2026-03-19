@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/main.js",
+    "start:dev": "nodemon --watch src --ext ts --exec \"ts-node --transpile-only src/main.ts\"",
+    "start:dev:yjs": "nodemon --watch src --ext ts --exec \"ts-node --transpile-only src/yjs-server.ts\"",
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "dev:api": "ts-node-dev --respawn --transpile-only src/main.ts",
     "dev:yjs": "ts-node-dev --respawn --transpile-only src/yjs-server.ts",
@@ -61,6 +63,7 @@
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "eslint": "^8.56.0",
+    "nodemon": "^3.1.0",
     "prettier": "^3.2.4",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",

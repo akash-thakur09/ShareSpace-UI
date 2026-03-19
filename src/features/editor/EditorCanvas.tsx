@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -9,45 +9,67 @@ import { EditorHeader } from './EditorHeader';
 import { DocumentSidebar } from './DocumentSidebar';
 import { useOfflineEditor } from '../../hooks/useOfflineEditor';
 import { useConnectionStatus } from '../../hooks/useConnectionStatus';
-import { ConnectionStatusBadge } from '../../components/ui/ConnectionStatusBadge';
+import { useAwareness } from '../presence/useAwareness';
+import { useAuth } from '../../contexts/useAuth';
+import { documentService } from '../../services/document.service';
 
-// Server-assigned user info — in a real app this comes from the auth context
-const userInfo = {
-  name:  'User ' + Math.floor(Math.random() * 1000),
-  color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
-};
+function colorFromString(str: string) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360}, 65%, 50%)`;
+}
 
 export function EditorCanvas() {
   const { documentId } = useParams<{ documentId: string }>();
-  const { ydoc, provider, localReady } = useOfflineEditor(documentId);
+  const { user, loading: authLoading } = useAuth();
+
+  const { ydoc, provider, localReady, wsError } = useOfflineEditor(
+    authLoading ? undefined : documentId,
+  );
+
   const connectionStatus = useConnectionStatus(provider);
   const [isEmpty, setIsEmpty] = useState(true);
+  const [docTitle, setDocTitle] = useState('Untitled Document');
+
+  // Load document metadata (title) from REST API
+  useEffect(() => {
+    if (!documentId) return;
+    documentService.get(documentId)
+      .then(doc => setDocTitle(doc.title))
+      .catch(() => {}); // non-fatal — title stays as default
+  }, [documentId]);
+
+  const userInfo = useMemo(() => ({
+    name:  user?.name || user?.email || 'Anonymous',
+    color: colorFromString(user?.id || 'anon'),
+    email: user?.email || '',
+  }), [user]);
+
+  const awarenessUsers = useAwareness(provider, user ? userInfo : null);
 
   const editor = useEditor({
     extensions: [
       StarterKit,
       Collaboration.configure({ document: ydoc }),
-      // Cursor extension added once provider is available (see effect below)
     ],
     editorProps: {
       attributes: { class: 'focus:outline-none' },
     },
     onUpdate: ({ editor: e }) => setIsEmpty(e.isEmpty),
-    // Render immediately — IndexedDB state is already in ydoc
     immediatelyRender: false,
   });
 
-  // Add CollaborationCursor once the provider is ready
+  // Add CollaborationCursor once provider is ready
   useEffect(() => {
     if (!editor || !provider || editor.isDestroyed) return;
     const already = editor.extensionManager.extensions.some(
-      (e) => e.name === 'collaborationCursor',
+      e => e.name === 'collaborationCursor',
     );
     if (already) return;
     editor.extensionManager.extensions.push(
       CollaborationCursor.configure({ provider, user: userInfo }),
     );
-  }, [editor, provider]);
+  }, [editor, provider, userInfo]);
 
   if (!documentId) {
     return (
@@ -57,83 +79,55 @@ export function EditorCanvas() {
     );
   }
 
-  // Block render only until IndexedDB has loaded — never wait for the server
-  if (!localReady || !editor) {
+  if (wsError) {
     return (
-      <div
-        className="flex h-full items-center justify-center"
-        style={{ background: 'rgb(var(--color-bg-base))' }}
-      >
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className="h-7 w-7 animate-spin rounded-full border-2"
-            style={{
-              borderColor: 'rgb(var(--color-border))',
-              borderTopColor: 'rgb(99 102 241)',
-            }}
-          />
-          <p className="text-sm" style={{ color: 'rgb(var(--color-text-muted))' }}>
-            Loading…
+      <div className="flex h-full items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center px-6">
+          <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="rgb(185 28 28)" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+          <p className="text-sm font-medium" style={{ color: 'rgb(var(--color-text-primary))' }}>
+            Connection error
           </p>
+          <p className="text-xs" style={{ color: 'rgb(var(--color-text-muted))' }}>{wsError}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div
-      className="flex h-full flex-col"
-      style={{ background: 'rgb(var(--color-bg-base))' }}
-    >
-      <EditorHeader connectionStatus={connectionStatus} />
-      <EditorToolbar editor={editor} />
+    <div className="flex h-full overflow-hidden">
+      <DocumentSidebar />
 
-      <div className="flex flex-1 overflow-hidden">
-        <DocumentSidebar />
+      <div className="flex flex-1 flex-col min-w-0">
+        <EditorHeader
+          connectionStatus={connectionStatus}
+          documentId={documentId}
+          initialTitle={docTitle}
+          awarenessUsers={awarenessUsers}
+        />
 
-        <main
-          className="flex-1 flex flex-col overflow-hidden"
-          style={{ background: 'rgb(var(--color-bg-base))' }}
-        >
-          {/* Offline banner — only shown when fully offline */}
-          {connectionStatus === 'offline' && (
-            <div
-              className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium"
-              style={{
-                background: 'rgb(254 242 242)',
-                borderBottom: '1px solid rgb(254 202 202)',
-                color: 'rgb(185 28 28)',
-              }}
-              role="alert"
-            >
-              <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728" />
-              </svg>
-              You're offline — edits are saved locally and will sync when reconnected
-            </div>
-          )}
+        {editor && <EditorToolbar editor={editor} />}
 
-          <div className="flex-1 overflow-y-auto px-6 py-6">
-            <div
-              className="mx-auto"
-              style={{ maxWidth: '720px' }}
-              onClick={() => editor.commands.focus()}
-            >
-              <div className="editor-card">
-                {isEmpty && (
-                  <div className="editor-placeholder">Start writing here…</div>
-                )}
-                <EditorContent editor={editor} />
-              </div>
-            </div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-8 py-10">
+            {/* Placeholder */}
+            {isEmpty && localReady && (
+              <p
+                className="pointer-events-none absolute text-base select-none"
+                style={{ color: 'rgb(var(--color-text-faint))' }}
+              >
+                Start writing…
+              </p>
+            )}
+            <EditorContent
+              editor={editor}
+              className="prose prose-sm max-w-none"
+              style={{ color: 'rgb(var(--color-text-primary))' }}
+            />
           </div>
-        </main>
-      </div>
-
-      {/* Floating status badge — bottom-right corner */}
-      <div className="fixed bottom-4 right-4 z-50">
-        <ConnectionStatusBadge status={connectionStatus} />
+        </div>
       </div>
     </div>
   );
