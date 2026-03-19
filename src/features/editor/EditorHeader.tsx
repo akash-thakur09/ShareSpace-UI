@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { ShareModal } from "../../components/ui/ShareModal";
 import { CreateDocModal } from "../../components/ui/CreateDocModal";
+import { ConnectionStatusBadge } from "../../components/ui/ConnectionStatusBadge";
+import type { ConnectionStatus } from "../../hooks/useConnectionStatus";
 
-export function EditorHeader() {
+interface EditorHeaderProps {
+  connectionStatus?: ConnectionStatus;
+}
+
+export function EditorHeader({ connectionStatus = 'connecting' }: EditorHeaderProps) {
   const [title, setTitle] = useState("Untitled Document");
   const [isEditing, setIsEditing] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -58,7 +64,7 @@ export function EditorHeader() {
                 {title}
               </button>
             )}
-            <span className="badge badge-live">Live</span>
+            <ConnectionStatusBadge status={connectionStatus} />
           </div>
         </div>
 
