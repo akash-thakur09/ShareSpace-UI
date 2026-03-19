@@ -1,3 +1,5 @@
+import { getStoredAccessToken } from '../contexts/auth-token';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export interface Document {
@@ -13,64 +15,56 @@ export interface CreateDocumentDto {
   metadata?: Record<string, any>;
 }
 
+function authHeaders(): Record<string, string> {
+  const token = getStoredAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...options?.headers,
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message || `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export const documentService = {
-  async create(dto: CreateDocumentDto = {}): Promise<Document> {
-    const response = await fetch(`${API_URL}/documents`, {
+  create: (dto: CreateDocumentDto = {}) =>
+    apiFetch<Document>('/documents', { method: 'POST', body: JSON.stringify(dto) }),
+
+  list: () =>
+    apiFetch<Document[]>('/documents'),
+
+  get: (publicId: string) =>
+    apiFetch<Document>(`/documents/${publicId}`),
+
+  update: (publicId: string, dto: Partial<CreateDocumentDto>) =>
+    apiFetch<Document>(`/documents/${publicId}`, { method: 'PUT', body: JSON.stringify(dto) }),
+
+  delete: (publicId: string) =>
+    apiFetch<void>(`/documents/${publicId}`, { method: 'DELETE' }),
+
+  createSnapshot: (publicId: string) =>
+    apiFetch<{ id: string; version: number; createdAt: string }>(
+      `/documents/${publicId}/snapshots`, { method: 'POST' }
+    ),
+
+  getSnapshots: (publicId: string) =>
+    apiFetch<{ id: string; version: number; createdAt: string; metadata: any }[]>(
+      `/documents/${publicId}/snapshots`
+    ),
+
+  restoreSnapshot: (publicId: string, snapshotId: string) =>
+    apiFetch<Document>(`/documents/${publicId}/snapshots/${snapshotId}/restore`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dto),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to create document');
-    }
-    
-    return response.json();
-  },
-
-  async get(publicId: string): Promise<Document> {
-    const response = await fetch(`${API_URL}/documents/${publicId}`);
-    
-    if (!response.ok) {
-      throw new Error('Document not found');
-    }
-    
-    return response.json();
-  },
-
-  async update(publicId: string, dto: Partial<CreateDocumentDto>): Promise<Document> {
-    const response = await fetch(`${API_URL}/documents/${publicId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dto),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to update document');
-    }
-    
-    return response.json();
-  },
-
-  async createSnapshot(publicId: string) {
-    const response = await fetch(`${API_URL}/documents/${publicId}/snapshots`, {
-      method: 'POST',
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to create snapshot');
-    }
-    
-    return response.json();
-  },
-
-  async getSnapshots(publicId: string) {
-    const response = await fetch(`${API_URL}/documents/${publicId}/snapshots`);
-    
-    if (!response.ok) {
-      throw new Error('Failed to get snapshots');
-    }
-    
-    return response.json();
-  },
+    }),
 };

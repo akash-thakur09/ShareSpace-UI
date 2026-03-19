@@ -1,26 +1,27 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
     container_name: sharespace-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: sharespace
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_DATABASE:-sharespace}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
     container_name: sharespace-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -30,21 +31,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
 
   api:
     build: .
     container_name: sharespace-api
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       API_PORT: 4000
+      # Database
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
-      DB_DATABASE: sharespace
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_DATABASE: ${DB_DATABASE:-sharespace}
+      # Redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      CORS_ORIGIN: http://localhost:3000
+      REDIS_PUBSUB_ENABLED: "true"
+      # Auth — MUST be overridden in production via .env or secrets
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      # CORS — set to your frontend origin
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # AI (optional — mock responses returned if not set)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # Observability
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "4000:4000"
     depends_on:
@@ -53,20 +68,36 @@ services:
       redis:
         condition: service_healthy
     command: node dist/main.js
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   yjs:
     build: .
     container_name: sharespace-yjs
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       YJS_PORT: 3001
+      # Database
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
-      DB_DATABASE: sharespace
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_DATABASE: ${DB_DATABASE:-sharespace}
+      # Redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PUBSUB_ENABLED: "true"
+      # Auth — must match the API service
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      # Observability
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Snapshot tuning
+      SNAPSHOT_INTERVAL_MS: ${SNAPSHOT_INTERVAL_MS:-30000}
     ports:
       - "3001:3001"
     depends_on:
@@ -75,6 +106,12 @@ services:
       redis:
         condition: service_healthy
     command: node dist/yjs-server.js
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 volumes:
   postgres_data:

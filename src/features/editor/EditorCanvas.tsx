@@ -1,38 +1,51 @@
-import { useEffect, useState } from 'react';
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import { useEffect, useMemo, useState } from 'react';
+import { EditorContent, useEditor } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
-import * as Y from 'yjs';
-import { WebsocketProvider } from 'y-websocket';
 import { useParams } from 'react-router-dom';
-import { EditorToolbar } from "./EditorToolbar";
-import { EditorHeader } from "./EditorHeader";
-import { DocumentSidebar } from "./DocumentSidebar";
+import { EditorToolbar } from './EditorToolbar';
+import { EditorHeader } from './EditorHeader';
+import { DocumentSidebar } from './DocumentSidebar';
+import { useOfflineEditor } from '../../hooks/useOfflineEditor';
+import { useConnectionStatus } from '../../hooks/useConnectionStatus';
+import { useAwareness } from '../presence/useAwareness';
+import { useAuth } from '../../contexts/useAuth';
+import { documentService } from '../../services/document.service';
 
-const YJS_SERVER_URL = import.meta.env.VITE_YJS_SERVER_URL || 'ws://localhost:3001';
-
-const userInfo = {
-  name: 'User ' + Math.floor(Math.random() * 1000),
-  color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
-};
+function colorFromString(str: string) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360}, 65%, 50%)`;
+}
 
 export function EditorCanvas() {
   const { documentId } = useParams<{ documentId: string }>();
-  const [ydoc] = useState<Y.Doc>(() => new Y.Doc());
-  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
-  const [synced, setSynced] = useState(false);
-  const [isEmpty, setIsEmpty] = useState(true);
+  const { user, loading: authLoading } = useAuth();
 
+  const { ydoc, provider, localReady, wsError } = useOfflineEditor(
+    authLoading ? undefined : documentId,
+  );
+
+  const connectionStatus = useConnectionStatus(provider);
+  const [isEmpty, setIsEmpty] = useState(true);
+  const [docTitle, setDocTitle] = useState('Untitled Document');
+
+  // Load document metadata (title) from REST API
   useEffect(() => {
     if (!documentId) return;
-    const prov = new WebsocketProvider(YJS_SERVER_URL, documentId, ydoc);
-    const timer = setTimeout(() => { setProvider(prov); setSynced(true); }, 5000);
-    prov.on('sync', (isSynced: boolean) => {
-      if (isSynced) { clearTimeout(timer); setProvider(prov); setSynced(true); }
-    });
-    return () => { clearTimeout(timer); setProvider(null); setSynced(false); prov.destroy(); };
-  }, [documentId, ydoc]);
+    documentService.get(documentId)
+      .then(doc => setDocTitle(doc.title))
+      .catch(() => {}); // non-fatal — title stays as default
+  }, [documentId]);
+
+  const userInfo = useMemo(() => ({
+    name:  user?.name || user?.email || 'Anonymous',
+    color: colorFromString(user?.id || 'anon'),
+    email: user?.email || '',
+  }), [user]);
+
+  const awarenessUsers = useAwareness(provider, user ? userInfo : null);
 
   const editor = useEditor({
     extensions: [
@@ -43,58 +56,78 @@ export function EditorCanvas() {
       attributes: { class: 'focus:outline-none' },
     },
     onUpdate: ({ editor: e }) => setIsEmpty(e.isEmpty),
+    immediatelyRender: false,
   });
 
+  // Add CollaborationCursor once provider is ready
   useEffect(() => {
-    if (!editor || !provider || !synced || editor.isDestroyed) return;
-    const alreadyAdded = editor.extensionManager.extensions.some(e => e.name === 'collaborationCursor');
-    if (alreadyAdded) return;
-    editor.extensionManager.extensions.push(
-      CollaborationCursor.configure({ provider, user: userInfo })
+    if (!editor || !provider || editor.isDestroyed) return;
+    const already = editor.extensionManager.extensions.some(
+      e => e.name === 'collaborationCursor',
     );
-  }, [editor, provider, synced]);
+    if (already) return;
+    editor.extensionManager.extensions.push(
+      CollaborationCursor.configure({ provider, user: userInfo }),
+    );
+  }, [editor, provider, userInfo]);
 
   if (!documentId) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p style={{ color: "rgb(var(--color-error))" }}>No document ID in URL</p>
+        <p style={{ color: 'rgb(var(--color-error))' }}>No document ID in URL</p>
       </div>
     );
   }
 
-  if (!editor) {
+  if (wsError) {
     return (
-      <div className="flex h-full items-center justify-center" style={{ background: "rgb(var(--color-bg-base))" }}>
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-7 w-7 animate-spin rounded-full border-2" style={{ borderColor: "rgb(var(--color-border))", borderTopColor: "rgb(99 102 241)" }} />
-          <p className="text-sm" style={{ color: "rgb(var(--color-text-muted))" }}>Loading editor...</p>
+      <div className="flex h-full items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center px-6">
+          <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="rgb(185 28 28)" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+          <p className="text-sm font-medium" style={{ color: 'rgb(var(--color-text-primary))' }}>
+            Connection error
+          </p>
+          <p className="text-xs" style={{ color: 'rgb(var(--color-text-muted))' }}>{wsError}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col" style={{ background: "rgb(var(--color-bg-base))" }}>
-      <EditorHeader />
-      <EditorToolbar editor={editor} />
-      <div className="flex flex-1 overflow-hidden">
-        <DocumentSidebar />
-        <main className="flex-1 flex flex-col overflow-hidden" style={{ background: "rgb(var(--color-bg-base))" }}>
-          <div className="flex-1 overflow-y-auto px-6 py-6">
-            <div
-              className="mx-auto"
-              style={{ maxWidth: "720px" }}
-              onClick={() => editor.commands.focus()}
-            >
-              <div className="editor-card">
-                {isEmpty && (
-                  <div className="editor-placeholder">Start writing here...</div>
-                )}
-                <EditorContent editor={editor} />
-              </div>
-            </div>
+    <div className="flex h-full overflow-hidden">
+      <DocumentSidebar />
+
+      <div className="flex flex-1 flex-col min-w-0">
+        <EditorHeader
+          connectionStatus={connectionStatus}
+          documentId={documentId}
+          initialTitle={docTitle}
+          awarenessUsers={awarenessUsers}
+        />
+
+        {editor && <EditorToolbar editor={editor} />}
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-8 py-10">
+            {/* Placeholder */}
+            {isEmpty && localReady && (
+              <p
+                className="pointer-events-none absolute text-base select-none"
+                style={{ color: 'rgb(var(--color-text-faint))' }}
+              >
+                Start writing…
+              </p>
+            )}
+            <EditorContent
+              editor={editor}
+              className="prose prose-sm max-w-none"
+              style={{ color: 'rgb(var(--color-text-primary))' }}
+            />
           </div>
-        </main>
+        </div>
       </div>
     </div>
   );

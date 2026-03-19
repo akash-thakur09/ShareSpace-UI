@@ -16,7 +16,7 @@ export class Document {
   @Index()
   publicId: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   title: string;
 
   @Column({ name: 'yjs_state', type: 'bytea', nullable: true })

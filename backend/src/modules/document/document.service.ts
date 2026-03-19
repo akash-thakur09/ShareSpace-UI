@@ -7,6 +7,8 @@ import { Document } from './entities/document.entity';
 import { DocumentSnapshot } from './entities/document-snapshot.entity';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
+import { DocumentPermissionService } from './document-permission.service';
+import { DocumentRole } from './entities/document-permission.entity';
 
 const nanoid = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 6);
 
@@ -19,9 +21,10 @@ export class DocumentService {
     private documentRepository: Repository<Document>,
     @InjectRepository(DocumentSnapshot)
     private snapshotRepository: Repository<DocumentSnapshot>,
+    private readonly permissionService: DocumentPermissionService,
   ) {}
 
-  async create(createDocumentDto: CreateDocumentDto): Promise<Document> {
+  async create(createDocumentDto: CreateDocumentDto, creatorId: string): Promise<Document> {
     const publicId = await this.generateUniquePublicId();
 
     // Initialize empty Yjs document
@@ -38,7 +41,19 @@ export class DocumentService {
     const saved = await this.documentRepository.save(document);
     this.logger.log(`Created document: ${publicId} (${saved.id})`);
 
+    // Grant creator owner role
+    await this.permissionService.grantRole(saved.id, creatorId, DocumentRole.OWNER);
+
     return saved;
+  }
+
+  async listForUser(userId: string): Promise<Document[]> {
+    const ids = await this.permissionService.listDocumentIdsForUser(userId);
+    if (ids.length === 0) return [];
+    return this.documentRepository.find({
+      where: ids.map((id) => ({ id })),
+      order: { updatedAt: 'DESC' },
+    });
   }
 
   async findByPublicId(publicId: string): Promise<Document> {
@@ -163,6 +178,20 @@ export class DocumentService {
     );
 
     return restored;
+  }
+
+  async deleteByPublicId(publicId: string): Promise<void> {
+    const document = await this.findByPublicId(publicId);
+    await this.documentRepository.remove(document);
+    this.logger.log(`Deleted document: ${publicId}`);
+  }
+
+  async canUserAccess(
+    documentId: string,
+    userId: string,
+    requiredRole: DocumentRole,
+  ): Promise<boolean> {
+    return this.permissionService.canUserAccess(documentId, userId, requiredRole);
   }
 
   private async generateUniquePublicId(): Promise<string> {

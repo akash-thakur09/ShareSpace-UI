@@ -1,241 +1,159 @@
-# Deployment Guide
+# ShareSpace Deployment Guide
 
-This guide covers deploying ShareSpace to various platforms.
+## Architecture
 
-## Pre-Deployment Checklist
+```
+Frontend (React/Vite)  →  Nginx (port 80)
+                       →  API Server (NestJS, port 4000)
+                       →  Yjs WebSocket Server (port 3001)
+                       →  PostgreSQL (port 5432)
+                       →  Redis (port 6379)
+```
 
-- [ ] Run `npm run build` successfully
-- [ ] Run `npm run lint` with no errors
-- [ ] Test the production build locally with `npm run preview`
-- [ ] Configure environment variables
-- [ ] Set up Fluid Framework backend (Azure Fluid Relay or local server)
-- [ ] Configure AI API keys (if using AI features)
+---
+
+## Quick Start (Docker — recommended)
+
+### 1. Configure environment
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env` and set **at minimum**:
+
+```dotenv
+JWT_SECRET=<long-random-string>
+JWT_REFRESH_SECRET=<different-long-random-string>
+OPENAI_API_KEY=<your-key>   # optional — mock responses used if omitted
+```
+
+### 2. Start all backend services
+
+```bash
+cd backend
+docker compose up -d
+```
+
+This starts: PostgreSQL, Redis, API server (4000), Yjs WS server (3001).
+
+### 3. Start the frontend
+
+```bash
+# from repo root
+npm install
+npm run dev        # dev server on http://localhost:5173
+# or
+npm run build && npm run preview   # production preview
+```
+
+---
+
+## Production Docker (full stack)
+
+### Backend
+
+```bash
+cd backend
+
+# Build images
+docker compose build
+
+# Start with required secrets
+JWT_SECRET=<secret> JWT_REFRESH_SECRET=<secret> docker compose up -d
+
+# Or use a .env file (recommended)
+docker compose --env-file .env up -d
+```
+
+### Frontend
+
+```bash
+# from repo root
+docker build -t sharespace-ui .
+docker run -p 80:80 sharespace-ui
+```
+
+The frontend Dockerfile builds the Vite app and serves it via Nginx.
+
+---
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and configure:
+### Backend (`backend/.env`)
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `JWT_SECRET` | ✅ | — | Access token signing secret |
+| `JWT_REFRESH_SECRET` | ✅ | — | Refresh token signing secret |
+| `DB_HOST` | — | `localhost` | Postgres host |
+| `DB_PORT` | — | `5432` | Postgres port |
+| `DB_USERNAME` | — | `postgres` | Postgres user |
+| `DB_PASSWORD` | — | `postgres` | Postgres password |
+| `DB_DATABASE` | — | `sharespace` | Postgres database name |
+| `REDIS_HOST` | — | `localhost` | Redis host |
+| `REDIS_PORT` | — | `6379` | Redis port |
+| `REDIS_PUBSUB_ENABLED` | — | `true` | Enable horizontal scaling |
+| `CORS_ORIGIN` | — | `http://localhost:3000` | Allowed frontend origin(s), comma-separated |
+| `API_PORT` | — | `4000` | REST API port |
+| `YJS_PORT` | — | `3001` | Yjs WebSocket port |
+| `OPENAI_API_KEY` | — | — | OpenAI key (mock used if absent) |
+| `OPENAI_MODEL` | — | `gpt-4o-mini` | OpenAI model |
+| `LOG_LEVEL` | — | `info` | Pino log level |
+| `SNAPSHOT_INTERVAL_MS` | — | `30000` | Yjs compaction interval |
+
+### Frontend (`.env`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `VITE_API_URL` | `http://localhost:4000` | Backend REST API URL |
+| `VITE_YJS_SERVER_URL` | `ws://localhost:3001` | Yjs WebSocket URL |
+
+---
+
+## Development (hot reload)
 
 ```bash
-cp .env.example .env
+cd backend
+docker compose -f docker-compose.dev.yml up -d
 ```
 
-Required variables:
-- `VITE_FLUID_TENANT_ID` - Your Fluid tenant ID
-- `VITE_FLUID_ENDPOINT` - Fluid service endpoint
-- `VITE_AI_API_KEY` - OpenAI or other AI service key
+Source is volume-mounted — changes to `backend/src/` reload automatically.
 
-## Platform-Specific Deployment
+---
 
-### 1. Vercel (Recommended)
+## Health Checks
 
-**One-Click Deploy:**
+| Endpoint | Service |
+|---|---|
+| `GET http://localhost:4000/health` | API + DB + Redis |
+| `GET http://localhost:3001/health` | Yjs WS server |
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/sharespace)
+---
 
-**Manual Deploy:**
+## Scaling Horizontally
+
+Run multiple `yjs` containers — they coordinate via Redis Pub/Sub:
 
 ```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Login
-vercel login
-
-# Deploy
-vercel
-
-# Deploy to production
-vercel --prod
+docker compose up -d --scale yjs=3
 ```
 
-**Configuration:**
-- Build Command: `npm run build`
-- Output Directory: `dist`
-- Install Command: `npm install`
-- Framework Preset: Vite
+Each instance gets a unique `SERVER_ID` (auto-generated UUID) for loop prevention.
 
-### 2. Netlify
+---
 
-**One-Click Deploy:**
-
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/yourusername/sharespace)
-
-**Manual Deploy:**
+## Stopping
 
 ```bash
-# Install Netlify CLI
-npm i -g netlify-cli
-
-# Login
-netlify login
-
-# Deploy
-netlify deploy
-
-# Deploy to production
-netlify deploy --prod
+cd backend
+docker compose down           # stop, keep volumes
+docker compose down --volumes # stop + delete DB/Redis data
 ```
 
-**Configuration:**
-- Build command: `npm run build`
-- Publish directory: `dist`
-- Functions directory: (leave empty)
+---
 
-### 3. Docker
-
-**Build Image:**
-
-```bash
-# Build the Docker image
-docker build -t sharespace:latest .
-
-# Run locally
-docker run -p 80:80 sharespace:latest
-
-# Test
-curl http://localhost
-```
-
-**Docker Compose:**
-
-```yaml
-version: '3.8'
-services:
-  app:
-    build: .
-    ports:
-      - "80:80"
-    environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-```
-
-**Deploy to Cloud:**
-
-```bash
-# Tag for registry
-docker tag sharespace:latest registry.example.com/sharespace:latest
-
-# Push to registry
-docker push registry.example.com/sharespace:latest
-
-# Deploy (example for AWS ECS, GCP Cloud Run, etc.)
-```
-
-### 4. AWS S3 + CloudFront
-
-```bash
-# Build
-npm run build
-
-# Sync to S3
-aws s3 sync dist/ s3://your-bucket-name --delete
-
-# Invalidate CloudFront cache
-aws cloudfront create-invalidation --distribution-id YOUR_DIST_ID --paths "/*"
-```
-
-**S3 Bucket Configuration:**
-- Enable static website hosting
-- Set index document: `index.html`
-- Set error document: `index.html` (for SPA routing)
-
-**CloudFront Configuration:**
-- Origin: Your S3 bucket
-- Default Root Object: `index.html`
-- Error Pages: 404 → /index.html (200)
-
-### 5. GitHub Pages
-
-```bash
-# Install gh-pages
-npm install -D gh-pages
-
-# Add to package.json scripts:
-# "deploy": "npm run build && gh-pages -d dist"
-
-# Deploy
-npm run deploy
-```
-
-**Note:** Update `vite.config.ts` with base path:
-
-```typescript
-export default defineConfig({
-  base: '/your-repo-name/',
-  // ... rest of config
-})
-```
-
-### 6. Azure Static Web Apps
-
-```bash
-# Install Azure CLI
-# https://docs.microsoft.com/en-us/cli/azure/install-azure-cli
-
-# Login
-az login
-
-# Create static web app
-az staticwebapp create \
-  --name sharespace \
-  --resource-group your-resource-group \
-  --source https://github.com/yourusername/sharespace \
-  --location "East US 2" \
-  --branch main \
-  --app-location "/" \
-  --output-location "dist"
-```
-
-## Post-Deployment
-
-### 1. Configure Custom Domain
-
-**Vercel:**
-```bash
-vercel domains add yourdomain.com
-```
-
-**Netlify:**
-- Go to Domain Settings
-- Add custom domain
-- Configure DNS
-
-### 2. Enable HTTPS
-
-All recommended platforms provide automatic HTTPS via Let's Encrypt.
-
-### 3. Set Up Monitoring
-
-**Vercel Analytics:**
-```bash
-npm install @vercel/analytics
-```
-
-Add to `src/main.tsx`:
-```typescript
-import { inject } from '@vercel/analytics';
-inject();
-```
-
-**Google Analytics:**
-Add to `index.html`:
-```html
-<script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
-```
-
-### 4. Configure CDN Caching
-
-Headers are already configured in:
-- `vercel.json` for Vercel
-- `netlify.toml` for Netlify
-- `nginx.conf` for Docker/custom servers
-
-### 5. Set Up CI/CD
-
-**GitHub Actions Example:**
-
-Create `.github/workflows/deploy.yml`:
+## CI/CD (GitHub Actions example)
 
 ```yaml
 name: Deploy
@@ -248,146 +166,30 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          
-      - name: Install dependencies
-        run: npm ci
-        
-      - name: Build
-        run: npm run build
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t sharespace-api ./backend
+
+      - name: Build frontend image
+        run: docker build -t sharespace-ui .
+
+      - name: Push & deploy
         env:
-          VITE_FLUID_TENANT_ID: ${{ secrets.FLUID_TENANT_ID }}
-          VITE_FLUID_ENDPOINT: ${{ secrets.FLUID_ENDPOINT }}
-          
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v20
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.ORG_ID }}
-          vercel-project-id: ${{ secrets.PROJECT_ID }}
-          vercel-args: '--prod'
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+        run: |
+          # push to your registry and deploy
 ```
-
-## Performance Optimization
-
-### 1. Enable Compression
-
-Already configured in:
-- Vite build (automatic)
-- nginx.conf (gzip)
-- Platform configs (Brotli)
-
-### 2. Image Optimization
-
-```bash
-# Install image optimization
-npm install -D vite-plugin-imagemin
-```
-
-### 3. Lazy Loading
-
-Routes are already configured for code splitting in `vite.config.ts`.
-
-### 4. Service Worker (Optional)
-
-```bash
-# Install Workbox
-npm install -D workbox-webpack-plugin
-```
-
-## Troubleshooting
-
-### Build Fails
-
-```bash
-# Clear cache
-rm -rf node_modules dist
-npm install
-npm run build
-```
-
-### 404 on Refresh
-
-Ensure SPA fallback is configured:
-- Vercel: `vercel.json` rewrites
-- Netlify: `netlify.toml` redirects
-- Nginx: `try_files` directive
-
-### Environment Variables Not Working
-
-- Prefix with `VITE_` for client-side access
-- Rebuild after changing variables
-- Check platform-specific env var configuration
-
-### Slow Load Times
-
-- Enable CDN caching
-- Optimize images
-- Check bundle size: `npm run build -- --mode analyze`
-- Consider lazy loading heavy components
-
-## Security Checklist
-
-- [ ] HTTPS enabled
-- [ ] Security headers configured
-- [ ] API keys in environment variables (not committed)
-- [ ] CORS configured properly
-- [ ] Rate limiting on API endpoints
-- [ ] Content Security Policy (CSP) configured
-- [ ] Regular dependency updates
-
-## Monitoring & Analytics
-
-### Recommended Tools
-
-- **Vercel Analytics** - Built-in performance monitoring
-- **Sentry** - Error tracking
-- **LogRocket** - Session replay
-- **Google Analytics** - User analytics
-- **Lighthouse CI** - Performance monitoring
-
-### Health Checks
-
-Set up monitoring for:
-- `/health` endpoint (if using Docker/nginx)
-- Build status
-- Deployment status
-- API availability
-
-## Scaling Considerations
-
-### Horizontal Scaling
-
-- Use CDN for static assets
-- Deploy to multiple regions
-- Load balance API requests
-
-### Database/State Management
-
-- Configure Fluid Framework for production
-- Set up proper Azure Fluid Relay tenant
-- Consider Redis for session management
-
-### Cost Optimization
-
-- Enable caching aggressively
-- Use serverless functions for API
-- Monitor bandwidth usage
-- Optimize bundle size
-
-## Support
-
-For deployment issues:
-- Check platform documentation
-- Review build logs
-- Test locally with `npm run preview`
-- Open an issue on GitHub
 
 ---
 
-Last updated: 2026-02-25
+## Security Checklist (production)
+
+- [ ] `JWT_SECRET` and `JWT_REFRESH_SECRET` are long random strings (32+ chars)
+- [ ] `CORS_ORIGIN` is set to your actual frontend domain
+- [ ] `NODE_ENV=production` is set
+- [ ] Postgres password is changed from default
+- [ ] Redis is not exposed publicly (internal network only)
+- [ ] HTTPS/WSS termination at load balancer or reverse proxy
+- [ ] `OPENAI_API_KEY` stored as a secret, not in version control
