@@ -6,6 +6,7 @@ import {
   type DocumentPermission,
   type PermissionRole,
 } from '../../services/permissions.service';
+import { sidebarEvents } from '../../services/sidebar-events';
 
 // ─── Role badge ──────────────────────────────────────────────────────────────
 
@@ -66,8 +67,17 @@ function RoleSelect({
       value={value}
       onChange={e => onChange(e.target.value as PermissionRole)}
       disabled={disabled}
-      className="input py-1 text-xs pr-7"
-      style={{ minWidth: '80px' }}
+      style={{
+        minWidth: '80px',
+        padding: '6px 28px 6px 8px',
+        border: '1px solid #e5e7eb',
+        borderRadius: '6px',
+        fontSize: '12px',
+        color: '#111827',
+        background: '#fff',
+        outline: 'none',
+        appearance: 'auto',
+      }}
     >
       {roles.map(r => (
         <option key={r} value={r}>{ROLE_STYLES[r].label}</option>
@@ -136,7 +146,14 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
   }, [documentId]);
 
   useEffect(() => {
-    if (open) fetchPermissions();
+    if (open) {
+      fetchPermissions();
+    } else {
+      // Reset add-form state when modal closes
+      setAddEmail('');
+      setAddRole('editor');
+      setError(null);
+    }
   }, [open, fetchPermissions]);
 
   // ── Add user ────────────────────────────────────────────────────────────────
@@ -154,6 +171,7 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
           : [...prev, newPerm]
       );
       setAddEmail('');
+      sidebarEvents.emitRefresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add user');
     } finally {
@@ -171,6 +189,7 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
     try {
       const updated = await permissionsService.updateRole(documentId, userId, role);
       setPermissions(prev => prev.map(p => p.userId === userId ? updated : p));
+      sidebarEvents.emitRefresh();
     } catch (e) {
       // Rollback
       fetchPermissions();
@@ -198,6 +217,7 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
     setError(null);
     try {
       await permissionsService.remove(documentId, userId);
+      sidebarEvents.emitRefresh();
     } catch (e) {
       fetchPermissions();
       setError(e instanceof Error ? e.message : 'Failed to remove user');
@@ -233,12 +253,24 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
           <form onSubmit={handleAdd} className="flex gap-2">
             <input
               type="email"
-              required
-              placeholder="Email address"
+              placeholder="Enter email address"
               value={addEmail}
-              onChange={e => setAddEmail(e.target.value)}
+              onChange={e => {
+                console.log('Typing email:', e.target.value);
+                setAddEmail(e.target.value);
+              }}
               disabled={adding}
-              className="input flex-1 text-sm"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: '8px 12px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '6px',
+                fontSize: '14px',
+                color: '#111827',
+                background: '#fff',
+                outline: 'none',
+              }}
             />
             <RoleSelect
               value={addRole}

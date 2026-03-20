@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { HealthIndicator, HealthIndicatorResult, HealthCheckError } from '@nestjs/terminus';
 import { ConfigService } from '@nestjs/config';
-import * as WebSocket from 'ws';
+import WebSocket = require('ws');
 
 @Injectable()
 export class WsHealthIndicator extends HealthIndicator {

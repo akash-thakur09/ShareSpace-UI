@@ -2,6 +2,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { CreateDocModal } from "../../components/ui/CreateDocModal";
 import { documentService, type Document, type DocumentRole } from "../../services/document.service";
+import { sidebarEvents } from "../../services/sidebar-events";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ interface DocSectionProps {
   onMenuToggle: (publicId: string | null) => void;
   onPin: (doc: Document) => void;
   onDelete?: (doc: Document) => void;
+  emptyMessage?: string;
 }
 
 function DocSection({
@@ -71,9 +73,12 @@ function DocSection({
   onMenuToggle,
   onPin,
   onDelete,
+  emptyMessage,
 }: DocSectionProps) {
   const filtered = docs.filter(d => d.title.toLowerCase().includes(search.toLowerCase()));
-  if (filtered.length === 0) return null;
+
+  // If no docs at all and no empty message configured, hide the section entirely
+  if (docs.length === 0 && !emptyMessage) return null;
 
   return (
     <div className="mb-2">
@@ -83,7 +88,11 @@ function DocSection({
       >
         {title}
       </p>
-      {filtered.map(doc => {
+      {docs.length === 0 ? (
+        <p className="px-2.5 py-2 text-xs" style={{ color: "rgb(var(--color-text-faint))" }}>
+          {emptyMessage}
+        </p>
+      ) : filtered.map(doc => {
         const color    = colorForId(doc.publicId);
         const isActive = doc.publicId === activeDocId;
         const isPinned = pinnedIds.has(doc.publicId);
@@ -210,6 +219,7 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const fetchDocs = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await documentService.list();
       // Restore pinned state from API
@@ -231,6 +241,9 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
   }, []);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  // Refresh sidebar when permissions change (e.g. role updated via ShareModal)
+  useEffect(() => sidebarEvents.onRefresh(fetchDocs), [fetchDocs]);
 
   // Sync active doc title into the list when it changes
   useEffect(() => {
@@ -406,6 +419,7 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
                 onNavigate={id => navigate(`/doc/${id}`)}
                 onMenuToggle={setMenuOpenId}
                 onPin={handlePin}
+                emptyMessage="No documents shared with you yet"
               />
             </>
           )}

@@ -11,7 +11,10 @@ import {
   UseGuards,
   Request,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { DocumentService } from './document.service';
 import { DocumentPermissionService } from './document-permission.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
@@ -20,6 +23,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DocumentRoleGuard } from './guards/document-role.guard';
 import { RequireDocumentRole } from './decorators/require-document-role.decorator';
 import { DocumentRole } from './entities/document-permission.entity';
+import { DocumentComment } from './entities/document-comment.entity';
+import { CreateCommentDto } from './dto/create-comment.dto';
 import { User } from '../auth/entities/user.entity';
 
 @Controller('documents')
@@ -28,6 +33,8 @@ export class DocumentController {
   constructor(
     private readonly documentService: DocumentService,
     private readonly permissionService: DocumentPermissionService,
+    @InjectRepository(DocumentComment)
+    private readonly commentRepo: Repository<DocumentComment>,
   ) {}
 
   /** POST /documents — authenticated user becomes owner */
@@ -153,12 +160,25 @@ export class DocumentController {
   async addPermission(
     @Param('publicId') publicId: string,
     @Body() body: { email: string; role: DocumentRole },
+    @Request() req: { user: User },
   ) {
+    // Prevent granting owner role via this endpoint
+    const ALLOWED_ROLES: DocumentRole[] = [DocumentRole.EDITOR, DocumentRole.COMMENTER, DocumentRole.VIEWER];
+    if (!ALLOWED_ROLES.includes(body.role)) {
+      throw new ForbiddenException('Cannot assign owner role via sharing');
+    }
+
     const document = await this.documentService.findByPublicId(publicId);
-    const user = await this.permissionService.findUserByEmail(body.email);
-    if (!user) throw new NotFoundException(`User with email ${body.email} not found`);
-    await this.permissionService.grantRole(document.id, user.id, body.role);
-    return { userId: user.id, email: user.email, name: user.name ?? undefined, role: body.role };
+    const targetUser = await this.permissionService.findUserByEmail(body.email);
+    if (!targetUser) throw new NotFoundException(`No account found for ${body.email}`);
+
+    // Prevent owner from sharing with themselves
+    if (targetUser.id === req.user.id) {
+      throw new ForbiddenException('Cannot change your own permissions');
+    }
+
+    await this.permissionService.grantRole(document.id, targetUser.id, body.role);
+    return { userId: targetUser.id, email: targetUser.email, name: targetUser.name ?? undefined, role: body.role };
   }
 
   /** PUT /documents/:publicId/permissions/:userId — owner only, update role */
@@ -231,5 +251,77 @@ export class DocumentController {
       title: document.title,
       updatedAt: document.updatedAt,
     };
+  }
+
+  // ── Comments ───────────────────────────────────────────────────────────────
+
+  /** GET /documents/:publicId/comments — viewer+ */
+  @Get(':publicId/comments')
+  @RequireDocumentRole(DocumentRole.VIEWER)
+  @UseGuards(DocumentRoleGuard)
+  async listComments(@Param('publicId') publicId: string) {
+    const document = await this.documentService.findByPublicId(publicId);
+    const comments = await this.commentRepo.find({
+      where: { documentId: document.id },
+      relations: ['user'],
+      order: { createdAt: 'ASC' },
+    });
+    return comments.map(c => ({
+      id: c.id,
+      userId: c.userId,
+      email: c.user?.email,
+      name: c.user?.name ?? undefined,
+      content: c.content,
+      createdAt: c.createdAt instanceof Date ? c.createdAt.toISOString() : c.createdAt,
+    }));
+  }
+
+  /** POST /documents/:publicId/comments — commenter+ */
+  @Post(':publicId/comments')
+  @HttpCode(HttpStatus.CREATED)
+  @RequireDocumentRole(DocumentRole.COMMENTER)
+  @UseGuards(DocumentRoleGuard)
+  async addComment(
+    @Param('publicId') publicId: string,
+    @Body() dto: CreateCommentDto,
+    @Request() req: { user: User },
+  ) {
+    const document = await this.documentService.findByPublicId(publicId);
+    const comment = this.commentRepo.create({
+      documentId: document.id,
+      userId: req.user.id,
+      content: dto.content,
+    });
+    const saved = await this.commentRepo.save(comment);
+    return {
+      id: saved.id,
+      userId: saved.userId,
+      email: req.user.email,
+      name: (req.user as any).name ?? undefined,
+      content: saved.content,
+      createdAt: saved.createdAt instanceof Date ? saved.createdAt.toISOString() : saved.createdAt,
+    };
+  }
+
+  /** DELETE /documents/:publicId/comments/:commentId — owner of comment or doc owner */
+  @Delete(':publicId/comments/:commentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireDocumentRole(DocumentRole.COMMENTER)
+  @UseGuards(DocumentRoleGuard)
+  async deleteComment(
+    @Param('publicId') publicId: string,
+    @Param('commentId') commentId: string,
+    @Request() req: { user: User },
+  ) {
+    const document = await this.documentService.findByPublicId(publicId);
+    const comment = await this.commentRepo.findOne({ where: { id: commentId, documentId: document.id } });
+    if (!comment) throw new NotFoundException('Comment not found');
+
+    const perm = await this.permissionService.getPermission(document.id, req.user.id);
+    const isDocOwner = perm?.role === DocumentRole.OWNER;
+    if (comment.userId !== req.user.id && !isDocOwner) {
+      throw new ForbiddenException('Cannot delete another user\'s comment');
+    }
+    await this.commentRepo.remove(comment);
   }
 }

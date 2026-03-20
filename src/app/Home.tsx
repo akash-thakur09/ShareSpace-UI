@@ -112,7 +112,13 @@ export function Home() {
 
   useEffect(() => {
     documentService.list()
-      .then(res => { setOwned(res.owned); setShared(res.shared); })
+      .then(res => {
+        const ownedDocs = res?.owned || [];
+        const sharedDocs = res?.shared || [];
+        console.log('Documents API:', { owned: ownedDocs, shared: sharedDocs });
+        setOwned(ownedDocs);
+        setShared(sharedDocs);
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -253,11 +259,15 @@ export function Home() {
           )}
         </section>
 
-        {shared.length > 0 && (
-          <section>
-            <h2 className="text-sm font-semibold mb-4" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-              Shared With Me
-            </h2>
+        <section>
+          <h2 className="text-sm font-semibold mb-4" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+            Shared With Me
+          </h2>
+          {shared.length === 0 ? (
+            <p className="text-sm" style={{ color: 'rgb(var(--color-text-muted))' }}>
+              No documents have been shared with you yet.
+            </p>
+          ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {shared.map(doc => (
                 <DocCard
@@ -267,8 +277,8 @@ export function Home() {
                 />
               ))}
             </div>
-          </section>
-        )}
+          )}
+        </section>
       </main>
     </div>
   );

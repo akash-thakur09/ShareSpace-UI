@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Modal } from "./Modal";
 import { documentService } from "../../services/document.service";
 
@@ -17,7 +16,6 @@ const DOC_TYPES = [
 ];
 
 export function CreateDocModal({ open, onClose, onCreated }: CreateDocModalProps) {
-  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [type, setType] = useState("blank");
   const [loading, setLoading] = useState(false);
@@ -30,9 +28,9 @@ export function CreateDocModal({ open, onClose, onCreated }: CreateDocModalProps
     setError("");
     try {
       const doc = await documentService.create({ title, metadata: { type } });
-      onCreated?.(doc.publicId, title);
       handleClose();
-      navigate(`/doc/${doc.publicId}`);
+      // Let the caller decide what to do after creation (navigate, refetch, etc.)
+      onCreated?.(doc.publicId, title);
     } catch {
       setError("Failed to create document. Please try again.");
     } finally {

@@ -7,6 +7,7 @@ import { useParams } from 'react-router-dom';
 import { EditorToolbar } from './EditorToolbar';
 import { EditorHeader } from './EditorHeader';
 import { DocumentSidebar } from './DocumentSidebar';
+import { CommentsPanel } from '../../components/panels/CommentsPanel';
 import { useOfflineEditor } from '../../hooks/useOfflineEditor';
 import { useConnectionStatus } from '../../hooks/useConnectionStatus';
 import { useAwareness } from '../presence/useAwareness';
@@ -37,20 +38,33 @@ export function EditorCanvas() {
   const [docTitle, setDocTitle] = useState('Untitled Document');
   const [savedTitle, setSavedTitle] = useState('Untitled Document');
   const [userRole, setUserRole] = useState<DocumentRole | null>(null);
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
-  // Load document metadata (title + role) from REST API
+  // Load document metadata (title + role) from REST API, then poll for role changes
   useEffect(() => {
     if (!documentId) return;
-    documentService.get(documentId)
-      .then(doc => {
-        setDocTitle(doc.title);
-        setSavedTitle(doc.title);
-        setUserRole(doc.role ?? null);
-      })
-      .catch(() => {});
+
+    let cancelled = false;
+
+    const fetchRole = () =>
+      documentService.get(documentId)
+        .then(doc => {
+          if (cancelled) return;
+          setDocTitle(doc.title);
+          setSavedTitle(doc.title);
+          setUserRole(doc.role ?? null);
+        })
+        .catch(() => {});
+
+    fetchRole();
+
+    // Re-check role every 30s — catches revocation / downgrade without a page reload
+    const interval = setInterval(fetchRole, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [documentId]);
 
   const readOnly = isReadOnlyRole(userRole);
+  const canSeeComments = userRole !== 'viewer';
 
   const userInfo = useMemo(() => ({
     name:  user?.name || user?.email || 'Anonymous',
@@ -128,27 +142,39 @@ export function EditorCanvas() {
           awarenessUsers={awarenessUsers}
           onTitleSaved={setSavedTitle}
           readOnly={readOnly}
+          userRole={userRole}
+          commentsOpen={commentsOpen}
+          onToggleComments={canSeeComments ? () => setCommentsOpen(o => !o) : undefined}
         />
 
         {editor && !readOnly && <EditorToolbar editor={editor} />}
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-8 py-10">
-            {/* Placeholder */}
-            {isEmpty && localReady && !readOnly && (
-              <p
-                className="pointer-events-none absolute text-base select-none"
-                style={{ color: 'rgb(var(--color-text-faint))' }}
-              >
-                Start writing…
-              </p>
-            )}
-            <EditorContent
-              editor={editor}
-              className="prose prose-sm max-w-none"
-              style={{ color: 'rgb(var(--color-text-primary))' }}
-            />
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-3xl px-8 py-10">
+              {/* Placeholder */}
+              {isEmpty && localReady && !readOnly && (
+                <p
+                  className="pointer-events-none absolute text-base select-none"
+                  style={{ color: 'rgb(var(--color-text-faint))' }}
+                >
+                  Start writing…
+                </p>
+              )}
+              <EditorContent
+                editor={editor}
+                className="prose prose-sm max-w-none"
+                style={{ color: 'rgb(var(--color-text-primary))' }}
+              />
+            </div>
           </div>
+
+          <CommentsPanel
+            documentId={documentId}
+            userRole={userRole}
+            open={canSeeComments && commentsOpen}
+            onClose={() => setCommentsOpen(false)}
+          />
         </div>
       </div>
     </div>

@@ -16,6 +16,9 @@ interface EditorHeaderProps {
   awarenessUsers?: AwarenessUser[];
   onTitleSaved?: (title: string) => void;
   readOnly?: boolean;
+  commentsOpen?: boolean;
+  onToggleComments?: () => void;
+  userRole?: string | null;
 }
 
 export function EditorHeader({
@@ -25,6 +28,9 @@ export function EditorHeader({
   awarenessUsers = [],
   onTitleSaved,
   readOnly = false,
+  commentsOpen = false,
+  onToggleComments,
+  userRole = null,
 }: EditorHeaderProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -65,6 +71,8 @@ export function EditorHeader({
     await logout();
     navigate("/login", { replace: true });
   }
+
+  const canSeeComments = userRole !== 'viewer';
 
   return (
     <>
@@ -145,6 +153,22 @@ export function EditorHeader({
             New Doc
           </button>
 
+          {/* Comments toggle */}
+          {canSeeComments && onToggleComments && (
+            <button
+              onClick={onToggleComments}
+              className="btn text-xs px-3 py-1.5 gap-1.5 rounded-lg border cursor-pointer"
+              style={{
+                background: commentsOpen ? 'rgb(99 102 241 / 0.08)' : 'transparent',
+                borderColor: commentsOpen ? 'rgb(99 102 241 / 0.4)' : 'rgb(var(--color-border))',
+                color: commentsOpen ? 'rgb(99 102 241)' : 'rgb(var(--color-text-secondary))',
+              }}
+              title="Toggle comments"
+            >
+              💬
+            </button>
+          )}
+
           {/* Share */}
           <button onClick={() => setShareOpen(true)} className="btn btn-primary text-xs px-3 py-1.5 gap-1.5">
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -172,7 +196,11 @@ export function EditorHeader({
       </header>
 
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} documentId={documentId} />
-      <CreateDocModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CreateDocModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(publicId) => navigate(`/doc/${publicId}`)}
+      />
     </>
   );
 }

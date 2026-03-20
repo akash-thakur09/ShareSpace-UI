@@ -7,7 +7,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string })?.from;
-  const redirectTo = from && !from.startsWith('/login') && !from.startsWith('/register') ? from : '/';
+  // Only restore the previous path if it's the dashboard — never auto-open a doc on login
+  const redirectTo = from && from === '/' ? from : '/';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
