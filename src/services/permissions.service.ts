@@ -2,7 +2,7 @@ import { getStoredAccessToken } from '../contexts/auth-token';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-export type PermissionRole = 'owner' | 'editor' | 'viewer';
+export type PermissionRole = 'owner' | 'editor' | 'commenter' | 'viewer';
 
 export interface DocumentPermission {
   userId: string;

@@ -45,6 +45,7 @@ export function useOfflineEditor(documentId: string | undefined): OfflineEditorS
   useEffect(() => {
     if (!documentId) return;
 
+    // ydocRef.current is the Y.Doc for this component instance (scoped by key={documentId})
     const ydoc  = ydocRef.current!;
     const token = getStoredAccessToken();
 
@@ -86,6 +87,7 @@ export function useOfflineEditor(documentId: string | undefined): OfflineEditorS
       prov.off('connection-close', onClose);
       idb.destroy();
       prov.destroy();
+      ydoc.destroy();
       idbRef.current      = null;
       providerRef.current = null;
       setProvider(null);
@@ -95,7 +97,7 @@ export function useOfflineEditor(documentId: string | undefined): OfflineEditorS
   }, [documentId]);
 
   return {
-    ydoc:      ydocRef.current,
+    ydoc:      ydocRef.current!,
     provider,
     localReady,
     wsError,

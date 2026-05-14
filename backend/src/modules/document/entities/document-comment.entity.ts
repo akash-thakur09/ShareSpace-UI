@@ -6,30 +6,13 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
-  Unique,
 } from 'typeorm';
 import { Document } from './document.entity';
 import { User } from '../../auth/entities/user.entity';
 
-export enum DocumentRole {
-  OWNER = 'owner',
-  EDITOR = 'editor',
-  COMMENTER = 'commenter',
-  VIEWER = 'viewer',
-}
-
-// Role hierarchy — higher index = more access
-export const ROLE_HIERARCHY: Record<DocumentRole, number> = {
-  [DocumentRole.VIEWER]: 0,
-  [DocumentRole.COMMENTER]: 1,
-  [DocumentRole.EDITOR]: 2,
-  [DocumentRole.OWNER]: 3,
-};
-
-@Entity('document_permissions')
-@Unique(['documentId', 'userId'])
-@Index(['documentId', 'userId'])
-export class DocumentPermission {
+@Entity('document_comments')
+@Index(['documentId'])
+export class DocumentComment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -39,11 +22,8 @@ export class DocumentPermission {
   @Column({ name: 'user_id' })
   userId: string;
 
-  @Column({ type: 'enum', enum: DocumentRole })
-  role: DocumentRole;
-
-  @Column({ name: 'is_pinned', type: 'boolean', default: false })
-  isPinned: boolean;
+  @Column({ type: 'text' })
+  content: string;
 
   @ManyToOne(() => Document, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'document_id' })
