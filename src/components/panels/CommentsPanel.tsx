@@ -147,7 +147,7 @@ export function CommentsPanel({ documentId, userRole, open, onClose }: CommentsP
                 <Avatar name={c.name} email={c.email} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'rgb(var(--color-text-primary))', truncate: true }}>
+                    <span className="truncate" style={{ fontSize: '12px', fontWeight: 600, color: 'rgb(var(--color-text-primary))' }}>
                       {c.name || c.email}
                     </span>
                     <span style={{ fontSize: '11px', color: 'rgb(var(--color-text-faint))', whiteSpace: 'nowrap' }}>
