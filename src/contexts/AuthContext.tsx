@@ -39,14 +39,36 @@ async function apiFetch(path: string, options?: RequestInit) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ user: null, loading: true, error: null });
 
-  // Restore session on mount via refresh token cookie
+  // Restore session on mount
   useEffect(() => {
-    apiFetch('/auth/refresh', { method: 'POST', body: JSON.stringify({}) })
-      .then((data: AuthResponse) => {
-        setStoredAccessToken(data.accessToken);
-        setState({ user: { id: data.id, email: data.email, name: data.name }, loading: false, error: null });
-      })
-      .catch(() => setState({ user: null, loading: false, error: null }));
+    const token = getStoredAccessToken();
+    if (token) {
+      // If we have a token, fetch user details to verify it's still valid
+      apiFetch('/auth/me', { method: 'GET' })
+        .then((user: any) => {
+          setState({ user: { id: user.id, email: user.email, name: user.name }, loading: false, error: null });
+        })
+        .catch(() => {
+          // Token expired or invalid, try restoring session using refresh token cookie
+          apiFetch('/auth/refresh', { method: 'POST', body: JSON.stringify({}) })
+            .then((data: AuthResponse) => {
+              setStoredAccessToken(data.accessToken);
+              setState({ user: { id: data.id, email: data.email, name: data.name }, loading: false, error: null });
+            })
+            .catch(() => {
+              setStoredAccessToken(null);
+              setState({ user: null, loading: false, error: null });
+            });
+        });
+    } else {
+      // No stored token, try restoring session using refresh token cookie
+      apiFetch('/auth/refresh', { method: 'POST', body: JSON.stringify({}) })
+        .then((data: AuthResponse) => {
+          setStoredAccessToken(data.accessToken);
+          setState({ user: { id: data.id, email: data.email, name: data.name }, loading: false, error: null });
+        })
+        .catch(() => setState({ user: null, loading: false, error: null }));
+    }
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

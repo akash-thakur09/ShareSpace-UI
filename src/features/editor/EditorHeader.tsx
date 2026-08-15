@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ShareModal } from "../../components/ui/ShareModal";
-import { CreateDocModal } from "../../components/ui/CreateDocModal";
 import { ConnectionStatusBadge } from "../../components/ui/ConnectionStatusBadge";
 import { PresenceAvatars } from "../presence/PresenceAvatars";
 import type { AwarenessUser } from "../presence/useAwareness";
 import type { ConnectionStatus } from "../../hooks/useConnectionStatus";
 import { useAuth } from "../../contexts/useAuth";
 import { documentService } from "../../services/document.service";
+import { sidebarEvents } from "../../services/sidebar-events";
 
 interface EditorHeaderProps {
   connectionStatus?: ConnectionStatus;
@@ -18,6 +18,10 @@ interface EditorHeaderProps {
   readOnly?: boolean;
   commentsOpen?: boolean;
   onToggleComments?: () => void;
+  aiOpen?: boolean;
+  onToggleAi?: () => void;
+  versionHistoryOpen?: boolean;
+  onToggleVersionHistory?: () => void;
   userRole?: string | null;
 }
 
@@ -26,45 +30,74 @@ export function EditorHeader({
   documentId,
   initialTitle = "Untitled Document",
   awarenessUsers = [],
-  onTitleSaved,
-  readOnly = false,
   commentsOpen = false,
   onToggleComments,
+  aiOpen = false,
+  onToggleAi,
+  onToggleVersionHistory,
   userRole = null,
 }: EditorHeaderProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [title, setTitle]       = useState(initialTitle);
-  const [isEditing, setIsEditing] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+  const optionsRef = useRef<HTMLDivElement>(null);
 
-  // Sync title when initialTitle changes (e.g. after document loads)
-  useEffect(() => { setTitle(initialTitle); }, [initialTitle]);
+  // Sync pinned status on mount/update
+  useEffect(() => {
+    if (!documentId) return;
+    documentService.get(documentId)
+      .then(doc => setIsPinned(doc.isPinned ?? false))
+      .catch(() => {});
+  }, [documentId]);
 
-  async function persistTitle(newTitle: string) {
-    if (!documentId || !newTitle.trim()) return;
+  // Click outside options dropdown handler
+  useEffect(() => {
+    if (!optionsOpen) return;
+    function handler(e: MouseEvent) {
+      if (optionsRef.current && !optionsRef.current.contains(e.target as Node)) {
+        setOptionsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [optionsOpen]);
+
+  async function handlePinToggle() {
+    if (!documentId) return;
+    setOptionsOpen(false);
     try {
-      await documentService.update(documentId, { title: newTitle.trim() });
-      onTitleSaved?.(newTitle.trim());
+      const res = await documentService.togglePin(documentId);
+      setIsPinned(res.isPinned);
+      sidebarEvents.emitRefresh();
     } catch (err) {
-      console.error("Failed to save title:", err);
+      console.error("Failed to pin document", err);
     }
   }
 
-  function handleTitleChange(value: string) {
-    setTitle(value);
-    // Debounce save
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => persistTitle(value), 800);
+  async function handleCopyLink() {
+    setOptionsOpen(false);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      alert("Link copied to clipboard!");
+    } catch {
+      alert("Failed to copy link");
+    }
   }
 
-  function handleTitleBlur() {
-    setIsEditing(false);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    persistTitle(title);
+  async function handleDelete() {
+    if (!documentId) return;
+    setOptionsOpen(false);
+    if (!window.confirm(`Are you sure you want to delete "${initialTitle}"?`)) return;
+    try {
+      await documentService.delete(documentId);
+      sidebarEvents.emitRefresh();
+      navigate("/", { replace: true });
+    } catch (err) {
+      console.error("Failed to delete document", err);
+    }
   }
 
   async function handleLogout() {
@@ -81,113 +114,140 @@ export function EditorHeader({
         style={{
           background: "rgb(var(--color-bg-surface))",
           borderBottom: "1px solid rgb(var(--color-border))",
-          boxShadow: "0 1px 3px rgb(0 0 0 / 0.04)",
         }}
       >
-        {/* Left */}
+        {/* Left Side: Breadcrumbs */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 shadow-sm">
-              <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <span className="text-sm font-semibold tracking-tight hidden sm:block" style={{ color: "rgb(var(--color-text-primary))" }}>
+          <div className="flex items-center gap-1.5 text-xs text-slate-400">
+            <button
+              onClick={() => navigate("/")}
+              className="hover:text-slate-800 transition-colors bg-transparent border-none cursor-pointer p-0 font-medium"
+            >
               ShareSpace
+            </button>
+            <span className="text-slate-300">/</span>
+            <span className="font-semibold text-slate-700 max-w-[140px] truncate" title={initialTitle}>
+              {initialTitle}
             </span>
           </div>
 
-          <div className="toolbar-sep" />
-
-          {/* Document title */}
-          <div className="flex items-center gap-2">
-            {isEditing && !readOnly ? (
-              <input
-                type="text"
-                value={title}
-                onChange={e => handleTitleChange(e.target.value)}
-                onBlur={handleTitleBlur}
-                onKeyDown={e => { if (e.key === "Enter") { e.currentTarget.blur(); } }}
-                className="input py-1 text-sm w-48"
-                autoFocus
-                maxLength={80}
-              />
-            ) : (
-              <button
-                onClick={() => { if (!readOnly) setIsEditing(true); }}
-                className="text-sm font-medium px-2 py-1 rounded-md transition-colors border-none"
-                style={{
-                  color: "rgb(var(--color-text-secondary))",
-                  background: "transparent",
-                  cursor: readOnly ? "default" : "pointer",
-                }}
-                onMouseEnter={e => { if (!readOnly) e.currentTarget.style.background = "rgb(var(--color-bg-hover))"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                title={readOnly ? title : "Click to rename"}
-              >
-                {title}
-              </button>
-            )}
-            <ConnectionStatusBadge status={connectionStatus} />
-          </div>
+          <div className="w-[1px] h-3.5 bg-slate-200" />
+          <ConnectionStatusBadge status={connectionStatus} />
         </div>
 
-        {/* Right */}
+        {/* Right Side: Collab indicators & Actions */}
         <div className="flex items-center gap-2">
-          <div className="hidden md:flex items-center mr-1">
+          {/* Active Collaborators presence display */}
+          <div className="flex items-center mr-1">
             <PresenceAvatars users={awarenessUsers} />
           </div>
 
-          {/* New Doc */}
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="btn text-xs px-3 py-1.5 gap-1.5 rounded-lg border cursor-pointer"
-            style={{ background: "transparent", borderColor: "rgb(var(--color-border))", color: "rgb(var(--color-text-secondary))" }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgb(var(--color-bg-hover))"; e.currentTarget.style.color = "rgb(var(--color-text-primary))"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgb(var(--color-text-secondary))"; }}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Doc
-          </button>
-
-          {/* Comments toggle */}
+          {/* Comments Panel Toggle */}
           {canSeeComments && onToggleComments && (
             <button
               onClick={onToggleComments}
-              className="btn text-xs px-3 py-1.5 gap-1.5 rounded-lg border cursor-pointer"
+              className="btn text-xs px-2.5 py-1.5 rounded-lg border hover:bg-slate-50 text-slate-600 transition-all cursor-pointer"
               style={{
                 background: commentsOpen ? 'rgb(99 102 241 / 0.08)' : 'transparent',
                 borderColor: commentsOpen ? 'rgb(99 102 241 / 0.4)' : 'rgb(var(--color-border))',
-                color: commentsOpen ? 'rgb(99 102 241)' : 'rgb(var(--color-text-secondary))',
+                color: commentsOpen ? 'rgb(99 102 241)' : undefined,
               }}
               title="Toggle comments"
             >
-              💬
+              💬 Comments
             </button>
           )}
 
-          {/* Share */}
-          <button onClick={() => setShareOpen(true)} className="btn btn-primary text-xs px-3 py-1.5 gap-1.5">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-            </svg>
+          {/* AI Panel Toggle */}
+          {onToggleAi && (
+            <button
+              onClick={onToggleAi}
+              className="btn text-xs px-2.5 py-1.5 rounded-lg border hover:bg-slate-50 text-slate-600 transition-all cursor-pointer"
+              style={{
+                background: aiOpen ? 'rgb(99 102 241 / 0.08)' : 'transparent',
+                borderColor: aiOpen ? 'rgb(99 102 241 / 0.4)' : 'rgb(var(--color-border))',
+                color: aiOpen ? 'rgb(99 102 241)' : undefined,
+              }}
+              title="Toggle AI Assistant"
+            >
+              ✦ AI Assistant
+            </button>
+          )}
+
+          {/* Share Trigger Button */}
+          <button
+            onClick={() => setShareOpen(true)}
+            className="btn btn-primary text-xs px-3.5 py-1.5 shadow-sm font-semibold"
+          >
             Share
           </button>
 
-          {/* User + Logout */}
+          {/* More options menu trigger */}
+          <div className="relative" ref={optionsRef}>
+            <button
+              onClick={() => setOptionsOpen(!optionsOpen)}
+              className="btn-icon border border-slate-200 text-slate-500 hover:text-slate-700"
+              title="Document settings"
+              style={{ padding: "5px" }}
+            >
+              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.5" />
+                <circle cx="12" cy="12" r="1.5" />
+                <circle cx="12" cy="19" r="1.5" />
+              </svg>
+            </button>
+
+            {optionsOpen && (
+              <div
+                className="absolute right-0 mt-1 z-50 rounded-lg py-1 min-w-[150px] shadow-lg animate-scaleIn"
+                style={{
+                  background: "rgb(var(--color-bg-surface))",
+                  border: "1px solid rgb(var(--color-border))",
+                }}
+              >
+                <button
+                  onClick={handlePinToggle}
+                  className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none bg-transparent hover:bg-slate-50 text-slate-700"
+                >
+                  <span>★</span>
+                  {isPinned ? "Unpin document" : "Pin document"}
+                </button>
+                <button
+                  onClick={handleCopyLink}
+                  className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none bg-transparent hover:bg-slate-50 text-slate-700"
+                >
+                  <span>🔗</span>
+                  Copy link
+                </button>
+                {onToggleVersionHistory && (
+                  <button
+                    onClick={() => { setOptionsOpen(false); onToggleVersionHistory(); }}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none bg-transparent hover:bg-slate-50 text-slate-700 border-b border-slate-100"
+                  >
+                    <span>🕒</span>
+                    Version history
+                  </button>
+                )}
+                <button
+                  onClick={handleDelete}
+                  className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none bg-transparent hover:bg-red-50 text-red-600"
+                >
+                  <span>🗑</span>
+                  Delete document
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* User Section & Logout */}
           {user && (
-            <div className="flex items-center gap-2 ml-1 pl-2" style={{ borderLeft: "1px solid rgb(var(--color-border))" }}>
-              <span className="hidden sm:block text-xs" style={{ color: "rgb(var(--color-text-muted))" }}>
-                {user.name || user.email}
-              </span>
-              <button onClick={handleLogout} className="btn-icon" title="Sign out">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            <div className="flex items-center gap-2 ml-1 pl-2 border-l border-slate-200">
+              <div className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-xs shadow-sm border border-slate-200">
+                {(user.name || user.email || 'US').slice(0,2).toUpperCase()}
+              </div>
+              <button onClick={handleLogout} className="btn-icon hover:text-red-500" title="Sign out">
+                <svg className="h-3.8 w-3.8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
               </button>
             </div>
@@ -195,12 +255,8 @@ export function EditorHeader({
         </div>
       </header>
 
+      {/* Share dialog modal */}
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} documentId={documentId} />
-      <CreateDocModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={(publicId) => navigate(`/doc/${publicId}`)}
-      />
     </>
   );
 }

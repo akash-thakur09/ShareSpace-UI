@@ -1,18 +1,14 @@
-﻿import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { CreateDocModal } from "../../components/ui/CreateDocModal";
-import { documentService, type Document, type DocumentRole } from "../../services/document.service";
+import { CommandPalette } from "../../components/ui/CommandPalette";
+import { SettingsModal } from "../../components/ui/SettingsModal";
+import { ShortcutsModal } from "../../components/ui/ShortcutsModal";
+import { ShareModal } from "../../components/ui/ShareModal";
+import { documentService, type Document } from "../../services/document.service";
 import { sidebarEvents } from "../../services/sidebar-events";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const COLORS = ["#6366f1", "#06b6d4", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6"];
-
-function colorForId(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return COLORS[h % COLORS.length];
-}
 
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -26,26 +22,6 @@ function relativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
-const ROLE_LABEL: Record<DocumentRole, string> = {
-  owner: "Owner", editor: "Editor", commenter: "Commenter", viewer: "Viewer",
-};
-
-function DocIcon({ color }: { color: string }) {
-  return (
-    <div
-      className="h-7 w-7 rounded-md flex items-center justify-center shrink-0"
-      style={{ background: `${color}15`, border: `1px solid ${color}25` }}
-    >
-      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round"
-          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    </div>
-  );
-}
-
-// ── DocSection — MUST be defined before DocumentSidebar ──────────────────────
-
 interface DocSectionProps {
   title: string;
   docs: Document[];
@@ -53,10 +29,11 @@ interface DocSectionProps {
   pinnedIds: Set<string>;
   menuOpenId: string | null;
   menuRef: React.RefObject<HTMLDivElement | null>;
-  search: string;
   onNavigate: (publicId: string) => void;
   onMenuToggle: (publicId: string | null) => void;
   onPin: (doc: Document) => void;
+  onShare: (doc: Document) => void;
+  onCopyLink: (doc: Document) => void;
   onDelete?: (doc: Document) => void;
   emptyMessage?: string;
 }
@@ -68,137 +45,134 @@ function DocSection({
   pinnedIds,
   menuOpenId,
   menuRef,
-  search,
   onNavigate,
   onMenuToggle,
   onPin,
+  onShare,
+  onCopyLink,
   onDelete,
   emptyMessage,
 }: DocSectionProps) {
-  const filtered = docs.filter(d => d.title.toLowerCase().includes(search.toLowerCase()));
-
-  // If no docs at all and no empty message configured, hide the section entirely
   if (docs.length === 0 && !emptyMessage) return null;
 
   return (
-    <div className="mb-2">
+    <div className="flex flex-col mb-4">
       <p
-        className="px-2.5 py-1 text-xs font-semibold uppercase tracking-widest"
+        className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider mb-1"
         style={{ color: "rgb(var(--color-text-faint))" }}
       >
         {title}
       </p>
-      {docs.length === 0 ? (
-        <p className="px-2.5 py-2 text-xs" style={{ color: "rgb(var(--color-text-faint))" }}>
-          {emptyMessage}
-        </p>
-      ) : filtered.map(doc => {
-        const color    = colorForId(doc.publicId);
-        const isActive = doc.publicId === activeDocId;
-        const isPinned = pinnedIds.has(doc.publicId);
-        const menuOpen = menuOpenId === doc.publicId;
+      <div className="flex flex-col gap-0.5">
+        {docs.length === 0 ? (
+          <p className="px-2.5 py-2 text-xs" style={{ color: "rgb(var(--color-text-faint))" }}>
+            {emptyMessage}
+          </p>
+        ) : (
+          docs.map(doc => {
+            const isActive = doc.publicId === activeDocId;
+            const isPinned = pinnedIds.has(doc.publicId);
+            const menuOpen = menuOpenId === doc.publicId;
 
-        return (
-          <div key={doc.publicId} className="relative group">
-            <button
-              onClick={() => onNavigate(doc.publicId)}
-              className="w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2.5 transition-all border-none cursor-pointer"
-              style={{ background: isActive ? "rgb(var(--color-bg-hover))" : "transparent" }}
-              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgb(var(--color-bg-elevated))"; }}
-              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-            >
-              <DocIcon color={color} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1">
-                  {isPinned && (
-                    <svg className="h-2.5 w-2.5 shrink-0" fill="currentColor" viewBox="0 0 24 24"
-                      style={{ color: "rgb(99 102 241)" }}>
-                      <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
-                    </svg>
-                  )}
-                  <p
-                    className="text-xs font-medium truncate"
-                    style={{ color: isActive ? "rgb(var(--color-text-primary))" : "rgb(var(--color-text-secondary))" }}
-                  >
-                    {doc.title}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <p className="text-xs truncate" style={{ color: "rgb(var(--color-text-faint))" }}>
-                    {relativeTime(doc.updatedAt)}
-                  </p>
-                  <span className="text-xs" style={{ color: "rgb(var(--color-text-faint))" }}>·</span>
-                  <span className="text-xs" style={{ color: "rgb(var(--color-text-faint))" }}>
-                    {ROLE_LABEL[doc.role]}
-                  </span>
-                </div>
-              </div>
-            </button>
-
-            {/* ⋮ menu trigger */}
-            <button
-              onClick={e => { e.stopPropagation(); onMenuToggle(menuOpen ? null : doc.publicId); }}
-              className="btn-icon absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ opacity: menuOpen ? 1 : undefined }}
-              title="More options"
-              aria-label="More options"
-            >
-              <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="5" r="1.5" />
-                <circle cx="12" cy="12" r="1.5" />
-                <circle cx="12" cy="19" r="1.5" />
-              </svg>
-            </button>
-
-            {/* Dropdown */}
-            {menuOpen && (
-              <div
-                ref={menuRef}
-                className="absolute right-0 z-50 rounded-lg py-1 min-w-[130px]"
-                style={{
-                  top: "calc(100% - 4px)",
-                  background: "rgb(var(--color-bg-surface))",
-                  border: "1px solid rgb(var(--color-border))",
-                  boxShadow: "0 8px 24px rgb(0 0 0 / 0.12)",
-                }}
-              >
+            return (
+              <div key={doc.publicId} className="relative group px-1">
                 <button
-                  onClick={() => onPin(doc)}
-                  className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none"
-                  style={{ background: "transparent", color: "rgb(var(--color-text-secondary))" }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "rgb(var(--color-bg-hover))"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                  onClick={() => onNavigate(doc.publicId)}
+                  className="w-full text-left px-2 py-1.5 rounded-md flex items-center gap-2.5 transition-all border-none cursor-pointer"
+                  style={{
+                    background: isActive ? "rgb(var(--color-bg-hover))" : "transparent"
+                  }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgb(var(--color-bg-hover))"; }}
+                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                >
+                  <span className="text-sm shrink-0">📄</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 justify-between">
+                      <p
+                        className="text-xs font-medium truncate"
+                        style={{
+                          color: isActive ? "rgb(var(--color-text-primary))" : "rgb(var(--color-text-secondary))",
+                          fontWeight: isActive ? 600 : 500
+                        }}
+                      >
+                        {doc.title}
+                      </p>
+                      {isPinned && (
+                        <span className="text-[10px] text-indigo-500" title="Pinned">★</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] mt-0.5" style={{ color: "rgb(var(--color-text-faint))" }}>
+                      Edited {relativeTime(doc.updatedAt)}
+                    </p>
+                  </div>
+                </button>
+
+                {/* Dropdown Options Menu Trigger */}
+                <button
+                  onClick={e => { e.stopPropagation(); onMenuToggle(menuOpen ? null : doc.publicId); }}
+                  className="btn-icon absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ opacity: menuOpen ? 1 : undefined, padding: "2px" }}
+                  title="More actions"
+                  aria-label="More actions"
                 >
                   <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
+                    <circle cx="12" cy="5" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="19" r="1.5" />
                   </svg>
-                  {isPinned ? "Unpin" : "Pin"}
                 </button>
-                {onDelete && (
-                  <button
-                    onClick={() => onDelete(doc)}
-                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none"
-                    style={{ background: "transparent", color: "rgb(185 28 28)" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgb(254 242 242)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+
+                {/* Dropdown menu */}
+                {menuOpen && (
+                  <div
+                    ref={menuRef}
+                    className="absolute right-2 z-50 rounded-lg py-1 min-w-[140px] shadow-lg animate-scaleIn"
+                    style={{
+                      top: "calc(100% - 2px)",
+                      background: "rgb(var(--color-bg-surface))",
+                      border: "1px solid rgb(var(--color-border))",
+                    }}
                   >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Delete
-                  </button>
+                    <button
+                      onClick={() => onPin(doc)}
+                      className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none bg-transparent hover:bg-slate-50 text-slate-700"
+                    >
+                      <span>★</span>
+                      {isPinned ? "Unpin" : "Pin"}
+                    </button>
+                    <button
+                      onClick={() => onShare(doc)}
+                      className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none bg-transparent hover:bg-slate-50 text-slate-700"
+                    >
+                      <span>👥</span>
+                      Share
+                    </button>
+                    <button
+                      onClick={() => onCopyLink(doc)}
+                      className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none bg-transparent hover:bg-slate-50 text-slate-700"
+                    >
+                      <span>🔗</span>
+                      Copy Link
+                    </button>
+                    {onDelete && (
+                      <button
+                        onClick={() => onDelete(doc)}
+                        className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer border-none bg-transparent hover:bg-red-50 text-red-600 border-t border-slate-100"
+                      >
+                        <span>🗑</span>
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
-
-// ── DocumentSidebar ───────────────────────────────────────────────────────────
 
 interface DocumentSidebarProps {
   activeDocTitle?: string;
@@ -208,12 +182,21 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
   const { documentId: activeDocId } = useParams<{ documentId: string }>();
   const navigate = useNavigate();
 
+  // Sidebar toggle state
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [createOpen, setCreateOpen]   = useState(false);
+
+  // Modals state
+  const [createOpen, setCreateOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [selectedDocForShare, setSelectedDocForShare] = useState<Document | null>(null);
+
+  // Documents state
   const [owned, setOwned]             = useState<Document[]>([]);
   const [shared, setShared]           = useState<Document[]>([]);
   const [loading, setLoading]         = useState(true);
-  const [search, setSearch]           = useState("");
   const [pinnedIds, setPinnedIds]     = useState<Set<string>>(new Set());
   const [menuOpenId, setMenuOpenId]   = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -222,11 +205,10 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
     setLoading(true);
     try {
       const res = await documentService.list();
-      // Restore pinned state from API
       const apiPinned = new Set<string>();
       [...res.owned, ...res.shared].forEach(d => { if (d.isPinned) apiPinned.add(d.publicId); });
       setPinnedIds(apiPinned);
-      // Sort: pinned first within each section
+
       const sortByPin = (docs: Document[]) => [
         ...docs.filter(d => d.isPinned),
         ...docs.filter(d => !d.isPinned),
@@ -241,18 +223,31 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
   }, []);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
+  useEffect(() => {
+    const unsub = sidebarEvents.onRefresh(fetchDocs);
+    return () => { unsub(); };
+  }, [fetchDocs]);
 
-  // Refresh sidebar when permissions change (e.g. role updated via ShareModal)
-  useEffect(() => sidebarEvents.onRefresh(fetchDocs), [fetchDocs]);
-
-  // Sync active doc title into the list when it changes
+  // Sync active doc title
   useEffect(() => {
     if (!activeDocId || !activeDocTitle) return;
     setOwned(prev => prev.map(d => d.publicId === activeDocId ? { ...d, title: activeDocTitle } : d));
     setShared(prev => prev.map(d => d.publicId === activeDocId ? { ...d, title: activeDocTitle } : d));
   }, [activeDocId, activeDocTitle]);
 
-  // Close dropdown on outside click
+  // Command palette hotkey listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Close context dropdown on outside click
   useEffect(() => {
     if (!menuOpenId) return;
     function onOutsideClick(e: MouseEvent) {
@@ -271,62 +266,80 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
 
   async function handleDelete(doc: Document) {
     setMenuOpenId(null);
+    if (!window.confirm(`Are you sure you want to delete "${doc.title}"?`)) return;
+
     setOwned(prev => prev.filter(d => d.publicId !== doc.publicId));
     try {
       await documentService.delete(doc.publicId);
       if (doc.publicId === activeDocId) navigate("/", { replace: true });
     } catch {
-      setOwned(prev => {
-        const exists = prev.some(d => d.publicId === doc.publicId);
-        return exists ? prev : [doc, ...prev];
-      });
+      fetchDocs();
     }
   }
 
   async function handlePin(doc: Document) {
     setMenuOpenId(null);
-    // Optimistic toggle
     const wasPin = pinnedIds.has(doc.publicId);
     setPinnedIds(prev => {
       const next = new Set(prev);
-      wasPin ? next.delete(doc.publicId) : next.add(doc.publicId);
+      if (wasPin) {
+        next.delete(doc.publicId);
+      } else {
+        next.add(doc.publicId);
+      }
       return next;
     });
     try {
       const { isPinned } = await documentService.togglePin(doc.publicId);
-      // Sync with server response
       setPinnedIds(prev => {
         const next = new Set(prev);
-        isPinned ? next.add(doc.publicId) : next.delete(doc.publicId);
+        if (isPinned) {
+          next.add(doc.publicId);
+        } else {
+          next.delete(doc.publicId);
+        }
         return next;
       });
-      // Re-sort sections
-      const sortByPin = (docs: Document[], pinned: Set<string>) => [
-        ...docs.filter(d => pinned.has(d.publicId)),
-        ...docs.filter(d => !pinned.has(d.publicId)),
-      ];
-      setOwned(prev => sortByPin(prev, new Set([...pinnedIds].filter(id => id !== doc.publicId).concat(isPinned ? [doc.publicId] : []))));
-      setShared(prev => sortByPin(prev, new Set([...pinnedIds].filter(id => id !== doc.publicId).concat(isPinned ? [doc.publicId] : []))));
+      fetchDocs();
     } catch {
-      // Rollback
-      setPinnedIds(prev => {
-        const next = new Set(prev);
-        wasPin ? next.add(doc.publicId) : next.delete(doc.publicId);
-        return next;
-      });
+      fetchDocs();
+    }
+  }
+
+  function handleShare(doc: Document) {
+    setMenuOpenId(null);
+    setSelectedDocForShare(doc);
+    setShareOpen(true);
+  }
+
+  async function handleCopyLink(doc: Document) {
+    setMenuOpenId(null);
+    const link = `${window.location.origin}/doc/${doc.publicId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      alert("Link copied to clipboard!");
+    } catch {
+      alert("Failed to copy link.");
     }
   }
 
   if (isCollapsed) {
     return (
       <aside
-        className="w-10 flex flex-col items-center py-3 gap-2 shrink-0"
+        className="w-12 flex flex-col items-center py-4 gap-4 shrink-0 transition-all"
         style={{ background: "rgb(var(--color-bg-surface))", borderRight: "1px solid rgb(var(--color-border))" }}
       >
         <button onClick={() => setIsCollapsed(false)} className="btn-icon" title="Expand sidebar">
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
+        </button>
+        <div style={{ borderTop: "1px solid rgb(var(--color-border))", width: "60%" }} />
+        <button onClick={() => setCreateOpen(true)} className="btn-icon" title="New Document">
+          <span className="text-base">＋</span>
+        </button>
+        <button onClick={() => setPaletteOpen(true)} className="btn-icon" title="Search (Ctrl+K)">
+          <span className="text-base">⌕</span>
         </button>
       </aside>
     );
@@ -335,66 +348,82 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
   return (
     <>
       <aside
-        className="w-56 flex flex-col shrink-0"
-        style={{ background: "rgb(var(--color-bg-surface))", borderRight: "1px solid rgb(var(--color-border))" }}
+        className="w-60 flex flex-col shrink-0 transition-all select-none"
+        style={{
+          background: "rgb(var(--color-bg-surface))",
+          borderRight: "1px solid rgb(var(--color-border))"
+        }}
       >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-3 py-2.5"
-          style={{ borderBottom: "1px solid rgb(var(--color-border))" }}
-        >
-          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgb(var(--color-text-faint))" }}>
-            Documents
-          </span>
-          <div className="flex items-center gap-0.5">
-            <button className="btn-icon" title="New document" onClick={() => setCreateOpen(true)}>
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        {/* Brand Header */}
+        <div className="flex items-center justify-between px-4 py-3.5 border-b" style={{ borderColor: "rgb(var(--color-border))" }}>
+          <button
+            onClick={() => navigate("/")}
+            className="flex items-center gap-2 cursor-pointer border-none bg-transparent"
+          >
+            <div className="flex h-6.5 w-6.5 items-center justify-center rounded-md bg-indigo-600 shadow-sm">
+              <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-            </button>
-            <button onClick={() => setIsCollapsed(true)} className="btn-icon" title="Collapse">
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="px-3 py-2.5" style={{ borderBottom: "1px solid rgb(var(--color-border))" }}>
-          <div className="relative">
-            <svg
-              className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 pointer-events-none"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              style={{ color: "rgb(var(--color-text-faint))" }}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </div>
+            <span className="text-sm font-semibold tracking-tight text-slate-800">
+              ShareSpace
+            </span>
+          </button>
+          <button onClick={() => setIsCollapsed(true)} className="btn-icon" title="Collapse sidebar">
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
-            <input
-              type="text"
-              placeholder="Search..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="input py-1.5 pl-8 text-xs"
-            />
-          </div>
+          </button>
         </div>
 
-        {/* Document list */}
-        <div className="flex-1 overflow-y-auto p-2">
+        {/* Primary Action Button */}
+        <div className="px-3 pt-3">
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="w-full btn btn-primary flex items-center justify-center gap-2 text-xs py-2 rounded-lg font-semibold shadow-sm"
+          >
+            <span>＋</span>
+            New Document
+          </button>
+        </div>
+
+        {/* Keyboard Friendly Search */}
+        <div className="px-3 py-2">
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg border text-xs text-slate-400 bg-slate-50 border-slate-200 cursor-pointer hover:bg-slate-100/70 hover:border-slate-300 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <span className="text-[14px]">⌕</span>
+              Search documents...
+            </span>
+            <kbd className="px-1 py-0.5 text-[9px] border bg-white border-slate-200 text-slate-400 rounded font-mono">
+              Ctrl K
+            </kbd>
+          </button>
+        </div>
+
+        {/* WORKSPACE Section */}
+        <div className="px-3 pt-2 mb-2 flex flex-col gap-0.5">
+          <p className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Workspace
+          </p>
+          <button
+            onClick={() => navigate("/")}
+            className="w-full text-left px-2.5 py-1.5 rounded-md flex items-center gap-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-none bg-transparent cursor-pointer"
+          >
+            <span>⌂</span> Home
+          </button>
+        </div>
+
+        {/* DOCUMENTS List Sections */}
+        <div className="flex-1 overflow-y-auto px-2">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <div
-                className="h-4 w-4 animate-spin rounded-full border-2"
-                style={{ borderColor: "rgb(var(--color-border))", borderTopColor: "rgb(99 102 241)" }}
-              />
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-600" />
             </div>
-          ) : owned.length === 0 && shared.length === 0 ? (
-            <p className="text-xs text-center py-6" style={{ color: "rgb(var(--color-text-faint))" }}>
-              {search ? "No documents found" : "No documents yet"}
-            </p>
           ) : (
-            <>
+            <div className="flex flex-col gap-3">
               <DocSection
                 title="My Documents"
                 docs={owned}
@@ -402,12 +431,15 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
                 pinnedIds={pinnedIds}
                 menuOpenId={menuOpenId}
                 menuRef={menuRef}
-                search={search}
                 onNavigate={id => navigate(`/doc/${id}`)}
                 onMenuToggle={setMenuOpenId}
                 onPin={handlePin}
+                onShare={handleShare}
+                onCopyLink={handleCopyLink}
                 onDelete={handleDelete}
+                emptyMessage="No personal documents"
               />
+              <div className="border-t border-slate-100 mx-1" />
               <DocSection
                 title="Shared With Me"
                 docs={shared}
@@ -415,40 +447,59 @@ export function DocumentSidebar({ activeDocTitle }: DocumentSidebarProps = {}) {
                 pinnedIds={pinnedIds}
                 menuOpenId={menuOpenId}
                 menuRef={menuRef}
-                search={search}
                 onNavigate={id => navigate(`/doc/${id}`)}
                 onMenuToggle={setMenuOpenId}
                 onPin={handlePin}
-                emptyMessage="No documents shared with you yet"
+                onShare={handleShare}
+                onCopyLink={handleCopyLink}
+                emptyMessage="No shared documents"
               />
-            </>
+            </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-2" style={{ borderTop: "1px solid rgb(var(--color-border))" }}>
+        {/* Footer Navigation (Settings & Help) */}
+        <div className="p-2 border-t border-slate-100 flex flex-col gap-0.5">
           <button
-            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-all border-none cursor-pointer"
-            style={{ color: "rgb(var(--color-text-muted))", background: "transparent" }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgb(var(--color-bg-elevated))"; e.currentTarget.style.color = "rgb(var(--color-text-secondary))"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgb(var(--color-text-muted))"; }}
-            onClick={fetchDocs}
-            title="Refresh document list"
+            onClick={() => setSettingsOpen(true)}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 border-none bg-transparent cursor-pointer"
           >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
+            <span>⚙</span> Settings
+          </button>
+          <button
+            onClick={() => setShortcutsOpen(true)}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 border-none bg-transparent cursor-pointer"
+          >
+            <span>?</span> Help & Shortcuts
           </button>
         </div>
       </aside>
 
+      {/* Modals */}
       <CreateDocModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={handleCreated}
       />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+      />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
+      <ShortcutsModal
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+      />
+      {selectedDocForShare && (
+        <ShareModal
+          open={shareOpen}
+          onClose={() => { setShareOpen(false); setSelectedDocForShare(null); }}
+          documentId={selectedDocForShare.publicId}
+        />
+      )}
     </>
   );
 }

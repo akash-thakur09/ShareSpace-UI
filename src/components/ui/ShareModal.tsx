@@ -11,17 +11,17 @@ import { sidebarEvents } from '../../services/sidebar-events';
 // ─── Role badge ──────────────────────────────────────────────────────────────
 
 const ROLE_STYLES: Record<PermissionRole, { bg: string; text: string; label: string }> = {
-  owner:     { bg: 'rgb(99 102 241 / 0.1)',  text: 'rgb(99 102 241)',  label: 'Owner'     },
-  editor:    { bg: 'rgb(16 185 129 / 0.1)',  text: 'rgb(5 150 105)',   label: 'Editor'    },
-  commenter: { bg: 'rgb(245 158 11 / 0.1)',  text: 'rgb(180 83 9)',    label: 'Commenter' },
-  viewer:    { bg: 'rgb(107 114 128 / 0.1)', text: 'rgb(75 85 99)',    label: 'Viewer'    },
+  owner:     { bg: 'rgb(99 102 241 / 0.08)',  text: 'rgb(99 102 241)',  label: 'Owner'     },
+  editor:    { bg: 'rgb(16 185 129 / 0.08)',  text: 'rgb(5 150 105)',   label: 'Editor'    },
+  commenter: { bg: 'rgb(245 158 11 / 0.08)',  text: 'rgb(180 83 9)',    label: 'Commenter' },
+  viewer:    { bg: 'rgb(148 163 184 / 0.08)', text: 'rgb(71 85 105)',    label: 'Viewer'    },
 };
 
 function RoleBadge({ role }: { role: PermissionRole }) {
   const s = ROLE_STYLES[role];
   return (
     <span
-      className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+      className="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold"
       style={{ background: s.bg, color: s.text }}
     >
       {s.label}
@@ -38,8 +38,8 @@ function Avatar({ name, email }: { name?: string; email: string }) {
   const hue = Math.abs(hash) % 360;
   return (
     <div
-      className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0"
-      style={{ background: `hsl(${hue}, 55%, 50%)` }}
+      className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0 shadow-sm"
+      style={{ background: `hsl(${hue}, 50%, 45%)` }}
     >
       {initials}
     </div>
@@ -67,17 +67,8 @@ function RoleSelect({
       value={value}
       onChange={e => onChange(e.target.value as PermissionRole)}
       disabled={disabled}
-      style={{
-        minWidth: '80px',
-        padding: '6px 28px 6px 8px',
-        border: '1px solid #e5e7eb',
-        borderRadius: '6px',
-        fontSize: '12px',
-        color: '#111827',
-        background: '#fff',
-        outline: 'none',
-        appearance: 'auto',
-      }}
+      className="border rounded px-2.5 py-1 text-xs text-slate-700 bg-white outline-none cursor-pointer hover:border-slate-350 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+      style={{ minWidth: '90px' }}
     >
       {roles.map(r => (
         <option key={r} value={r}>{ROLE_STYLES[r].label}</option>
@@ -91,12 +82,11 @@ function RoleSelect({
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
     <div
-      className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs"
-      style={{ background: 'rgb(254 242 242)', color: 'rgb(185 28 28)', border: '1px solid rgb(254 202 202)' }}
+      className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs bg-red-50 text-red-700 border border-red-200"
       role="alert"
     >
-      <span className="flex-1">{message}</span>
-      <button onClick={onDismiss} className="shrink-0 opacity-60 hover:opacity-100" aria-label="Dismiss">✕</button>
+      <span className="flex-1 font-medium">{message}</span>
+      <button onClick={onDismiss} className="shrink-0 opacity-60 hover:opacity-100 font-bold" aria-label="Dismiss">✕</button>
     </div>
   );
 }
@@ -149,7 +139,6 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
     if (open) {
       fetchPermissions();
     } else {
-      // Reset add-form state when modal closes
       setAddEmail('');
       setAddRole('editor');
       setError(null);
@@ -164,7 +153,6 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
     setError(null);
     try {
       const newPerm = await permissionsService.add(documentId, addEmail.trim(), addRole);
-      // Optimistic: replace if already exists, else append
       setPermissions(prev =>
         prev.some(p => p.userId === newPerm.userId)
           ? prev.map(p => p.userId === newPerm.userId ? newPerm : p)
@@ -182,7 +170,6 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
   // ── Change role ─────────────────────────────────────────────────────────────
   async function handleRoleChange(userId: string, role: PermissionRole) {
     if (!documentId) return;
-    // Optimistic update
     setPermissions(prev => prev.map(p => p.userId === userId ? { ...p, role } : p));
     setBusy(b => ({ ...b, [userId]: true }));
     setError(null);
@@ -191,7 +178,6 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
       setPermissions(prev => prev.map(p => p.userId === userId ? updated : p));
       sidebarEvents.emitRefresh();
     } catch (e) {
-      // Rollback
       fetchPermissions();
       setError(e instanceof Error ? e.message : 'Failed to update role');
     } finally {
@@ -205,13 +191,11 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
     const target = permissions.find(p => p.userId === userId);
     if (!target) return;
 
-    // Prevent removing the last owner
     if (target.role === 'owner' && permissions.filter(p => p.role === 'owner').length <= 1) {
       setError('Cannot remove the last owner of the document.');
       return;
     }
 
-    // Optimistic remove
     setPermissions(prev => prev.filter(p => p.userId !== userId));
     setBusy(b => ({ ...b, [userId]: true }));
     setError(null);
@@ -243,34 +227,21 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Share Document" width="480px">
-      <div className="flex flex-col gap-4">
+    <Modal open={open} onClose={onClose} title="Share Document" width="460px">
+      <div className="flex flex-col gap-4 py-1">
 
         {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
-        {/* ── Add user (owner only) ── */}
+        {/* ── Invite Form (Owner Only) ── */}
         {isOwner && (
           <form onSubmit={handleAdd} className="flex gap-2">
             <input
               type="email"
               placeholder="Enter email address"
               value={addEmail}
-              onChange={e => {
-                console.log('Typing email:', e.target.value);
-                setAddEmail(e.target.value);
-              }}
+              onChange={e => setAddEmail(e.target.value)}
               disabled={adding}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                padding: '8px 12px',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                fontSize: '14px',
-                color: '#111827',
-                background: '#fff',
-                outline: 'none',
-              }}
+              className="input flex-1 min-w-0"
             />
             <RoleSelect
               value={addRole}
@@ -280,35 +251,32 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
             <button
               type="submit"
               disabled={adding || !addEmail.trim()}
-              className="btn btn-primary shrink-0 px-3 text-xs"
+              className="btn btn-primary px-3 text-xs shrink-0 font-semibold"
               style={{ opacity: adding || !addEmail.trim() ? 0.6 : 1 }}
             >
               {adding ? (
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              ) : 'Add'}
+              ) : 'Invite'}
             </button>
           </form>
         )}
 
-        {/* ── People with access ── */}
+        {/* ── People with access list ── */}
         <div>
-          <p className="text-xs font-medium mb-2" style={{ color: 'rgb(var(--color-text-muted))' }}>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
             People with access
           </p>
 
           {loadingList ? (
             <div className="flex items-center justify-center py-6">
-              <div
-                className="h-5 w-5 animate-spin rounded-full border-2"
-                style={{ borderColor: 'rgb(var(--color-border))', borderTopColor: 'rgb(99 102 241)' }}
-              />
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-600" />
             </div>
           ) : permissions.length === 0 ? (
-            <p className="text-xs py-4 text-center" style={{ color: 'rgb(var(--color-text-muted))' }}>
-              No permissions found
+            <p className="text-xs py-4 text-center text-slate-400">
+              No collaborators found
             </p>
           ) : (
-            <ul className="flex flex-col gap-1">
+            <ul className="flex flex-col gap-1 max-h-[220px] overflow-y-auto pr-1">
               {permissions.map(perm => {
                 const isSelf = perm.userId === user?.id;
                 const isLastOwner = perm.role === 'owner' && permissions.filter(p => p.role === 'owner').length <= 1;
@@ -318,26 +286,25 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
                 return (
                   <li
                     key={perm.userId}
-                    className="flex items-center gap-3 rounded-lg px-2 py-2"
-                    style={{ background: isSelf ? 'rgb(var(--color-bg-elevated))' : undefined }}
+                    className="flex items-center gap-3 rounded-lg px-2.5 py-1.8 hover:bg-slate-50 transition-colors"
                   >
                     <Avatar name={perm.name} email={perm.email} />
 
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate" style={{ color: 'rgb(var(--color-text-primary))' }}>
+                      <p className="text-xs font-semibold text-slate-800 truncate">
                         {perm.name || perm.email}
                         {isSelf && (
-                          <span className="ml-1.5 text-xs" style={{ color: 'rgb(var(--color-text-muted))' }}>(you)</span>
+                          <span className="ml-1.5 text-[10px] font-medium text-slate-400">(you)</span>
                         )}
                       </p>
                       {perm.name && (
-                        <p className="text-xs truncate" style={{ color: 'rgb(var(--color-text-muted))' }}>
+                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
                           {perm.email}
                         </p>
                       )}
                     </div>
 
-                    {/* Role — editable for owner, badge otherwise */}
+                    {/* Role selector / badge */}
                     {canManage && perm.role !== 'owner' ? (
                       <RoleSelect
                         value={perm.role}
@@ -353,16 +320,15 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
                       <button
                         onClick={() => handleRemove(perm.userId)}
                         disabled={rowBusy}
-                        className="btn-icon shrink-0"
-                        title="Remove access"
-                        style={{ opacity: rowBusy ? 0.4 : 1 }}
+                        className="btn-icon p-1 shrink-0 text-slate-400 hover:text-red-600"
+                        title="Revoke access"
                         aria-label={`Remove ${perm.email}`}
                       >
                         {rowBusy ? (
-                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-350 border-t-transparent" />
                         ) : (
-                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                           </svg>
                         )}
                       </button>
@@ -374,16 +340,15 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
           )}
         </div>
 
-        {/* ── Divider ── */}
-        <div style={{ borderTop: '1px solid rgb(var(--color-border))' }} />
+        <div className="border-t border-slate-100" />
 
-        {/* ── Copy link ── */}
+        {/* ── Link Sharing Option ── */}
         <div className="flex gap-2">
           <div
-            className="flex-1 flex items-center px-3 rounded-lg text-xs truncate"
+            className="flex-1 flex items-center px-3 rounded-lg text-[10px] truncate border"
             style={{
-              background: 'rgb(var(--color-bg-elevated))',
-              border: '1px solid rgb(var(--color-border))',
+              background: 'rgb(var(--color-bg-base))',
+              borderColor: 'rgb(var(--color-border))',
               color: 'rgb(var(--color-text-secondary))',
               height: '36px',
               fontFamily: 'var(--font-mono)',
@@ -393,20 +358,18 @@ export function ShareModal({ open, onClose, documentId }: ShareModalProps) {
           </div>
           <button
             onClick={handleCopy}
-            className="btn btn-primary shrink-0 px-3 text-xs gap-1.5"
+            className="btn btn-primary shrink-0 px-3.5 text-xs gap-1.5 font-semibold"
             style={{ minWidth: '100px' }}
           >
             {copied ? (
               <>
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                </svg>
+                <span className="text-xs leading-none">✓</span>
                 Copied!
               </>
             ) : (
               <>
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
                     d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
                 Copy Link
